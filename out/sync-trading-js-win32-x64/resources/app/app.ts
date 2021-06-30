@@ -42,7 +42,9 @@ export class App {
             //console.log('Stream server pipe listening on ' + Config.PIPE_PATH);
         });
 
-        ipcSend('sync-running', true);
+        ipcSend('sync-running', {
+            version: Config.VERSION
+        });
     }
 
     OnClose() {

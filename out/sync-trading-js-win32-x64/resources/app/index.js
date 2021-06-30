@@ -2,6 +2,8 @@
 const electron = nodeRequire('electron') 
 const ipc = electron.ipcRenderer; 
 
+var Version;
+
 var NOT_PAIRED = 'Not paired';
 var PAIRED = 'Paired';
 var DISCONNECTED = 'Disconnected';
@@ -16,82 +18,98 @@ var orders = [];
 
 var paired_orders = [];
 
+var place_order_triggers = [];
+
+
 var logs = [];
-
-var MaxLogRecords = 200;
-
-var DEFAULT_SYNC_CHECK_INTERVAL = 10;
 
 var selectedPairingAccountA = null;
 
 var selectedPairingAccountB = null;
 
 var AppConfig = {
+    //set default properties
     spread: {},
-    symbol: {}
-    //todo - other fields may go below in the future
+    symbol: {},
+    show_waning_message_if_loss_is_possible: true,
+    maximum_log_records: 200,
+    sync_check_interval_in_seconds: 10,
+    refresh_account_info_interval_in_seconds: 30,
+    notification_pool_connection: true,
+    notification_secure_connection: true,
+    send_notification_session_information_only_when_market_is_open: true,
+
 };
 
 
-$(document).ready(function () {
-        
 
-    $("#btn-main").on('click', function () {
+var alertCollection = [];
+
+//set AlertifyJS defaults - visit the website to see more options
+
+alertify.defaults.transition = 'zoom'; //options are: slide, pulse, flipx, flipy, zoom, fade
+alertify.defaults.notifier.delay = 20;
+alertify.defaults.notifier.position ='bottom-center',
+
+    
+
+
+
+$(document).ready(function () {
+
+    $('.menu .item')
+        .tab();
+
+
+    $("#btn_main").on('click', function () {
         showMain();
     })
 
-    $("#btn-pairing").on('click', function () {
+    $("#btn_place_order_triggers").on('click', function () {
         hideCenterContents();
-        $('#btn-pairing').addClass('active');
-        $('#center-content-pairing').fadeIn();
+        $('#btn_place_order_triggers').addClass('active');
+        $('#center_content_place_order_triggers').fadeIn();
+        displayPlaceOrderTriggers();
+    })
+
+    $("#btn_pairing").on('click', function () {
+        hideCenterContents();
+        $('#btn_pairing').addClass('active');
+        $('#center_content_pairing').fadeIn();
         pairingComponent();
     })
 
 
-    $("#btn-output").on('click', function () {
+    $("#btn_output").on('click', function () {
         hideCenterContents();
-        $('#btn-output').addClass('active');
-        $('#center-content-output').fadeIn();
+        $('#btn_output').addClass('active');
+        $('#center_content_output').fadeIn();
         displayLog();
     })
 
-    $("#btn-metrics").on('click', function () {
+    $("#btn_metrics").on('click', function () {
         hideCenterContents();
-        $('#btn-metrics').addClass('active');
-        $('#center-content-metrics').fadeIn();
+        $('#btn_metrics').addClass('active');
+        $('#center_content_metrics').fadeIn();
         displayMetrics();
     })
 
-    $("#btn-symbols-configuration").on('click', function () {
 
-        if (!AppConfig.symbol || Object.keys(AppConfig.symbol).length == 0) {
-            ipc.send('get-symbols-config', true);
-        } else if (!AppConfig.spread || Object.keys(AppConfig.spread).length == 0) {//also
-            ipc.send('get-symbols-config', true);
-        }
-
+    $("#btn_settings").on('click', function () {
         hideCenterContents();
-        $('#btn-symbols-configuration').addClass('active');
-        $('#center-content-symbols-configuration').fadeIn();
-        displaySymbolsConfiguration();
-    })
-
-    
-    $("#btn-settings").on('click', function () {
-        hideCenterContents();
-        $('#btn-settings').addClass('active');
-        $('#center-content-settings').fadeIn();
+        $('#btn_settings').addClass('active');
+        $('#center_content_settings').fadeIn();
         settings();
     })
 
-    $("#pairing-account-btn").on('click', function () {
+    $("#pairing_account_btn").on('click', function () {
         if (!selectedPairingAccountA || !selectedPairingAccountB) {
             return;
         }  
 
         if (selectedPairingAccountA.broker == selectedPairingAccountB.broker
             && selectedPairingAccountA.account_number == selectedPairingAccountB.account_number) {
-            alert('Cannot pair an account to itseft! Please select another account.');
+            alertBox("Invalid",'Cannot pair an account to itseft! Please select another account.');
             return 
         }
 
@@ -104,14 +122,14 @@ $(document).ready(function () {
         selectedPairingAccountB = null;
 
         setTimeout(function () {
-            $('#pairing-accounts-dropdown-b')
+            $('#pairing_accounts_dropdown_b')
                 .dropdown('clear');
 
         }, 0);
 
         setTimeout(function () {
 
-            $('#pairing-accounts-dropdown-a')
+            $('#pairing_accounts_dropdown_a')
                 .dropdown('clear');
 
         }, 0);
@@ -121,26 +139,29 @@ $(document).ready(function () {
     })
 
 
-    $("#pairing-account-remove-pairing-btn").on('click', function () {
+    $("#pairing_account_remove_pairing_btn").on('click', function () {
         var pairs = getSelectedPairingsToRemove(); //array of pairs
-        if (pairs.length > 0 && confirm(`You have selected ${pairs.length * 2} accounts to unpair.\nAre you sure you want to unpair them?`)) {
-            if (pairs && pairs.length > 0) {
-                ipc.send('remove-pairing', pairs);
-            }
+        if (pairs.length > 0) {
+
+            confirmBox("Confirm", `You have selected ${pairs.length * 2} accounts to unpair.\nAre you sure you want to unpair them?`,
+                function () {
+                    if (pairs && pairs.length > 0) {
+                        ipc.send('remove-pairing', pairs);
+                    }
+                },
+                function () {
+                });
+
         }
     })
     
     ipc.send('start-sync', true);
 
-    ipc.send('get-symbols-config', true);
-
-    ipc.send('get-settings', true);
-
-
+    ipc.send('get-app-config', AppConfig);//init with default
 
     ipc.on('sync-running', function (event, arg) {
-
-        console.log('sync-running', arg);
+        Version = arg.version;
+        console.log('sync-running', `Version ${arg.version}`);
 
         addSuccessLog("Sync serivce running...");
         
@@ -165,6 +186,11 @@ $(document).ready(function () {
     ipc.on('intro', function (event, arg) {
 
         console.log('intro', arg);
+        if (arg.broker && arg.account_number && arg.version != Version) {
+            var error = `EA version of [${arg.broker}, ${arg.account_number}] (${arg.version}) is incompatible with application version ${Version}. This application may not work properly!`
+            addErrorLog(error);
+            alertify.error(error, 0);
+        }
         
         if (setAccount(arg)) {
             refreshActionList(arg);
@@ -190,7 +216,7 @@ $(document).ready(function () {
 
         console.log('paired-fail', arg);
 
-        alert(arg);
+        alertBox("Failed",arg);
 
     });
 
@@ -198,7 +224,7 @@ $(document).ready(function () {
 
         console.log('already-paired', arg);
 
-        alert(arg);
+        alertBox("Not Allowed",arg);
 
     });
 
@@ -207,7 +233,7 @@ $(document).ready(function () {
 
         console.log('could-not-remove-pairing', arg);
 
-        alert(arg.feedback);
+        alertBox("Error",arg.feedback);
     });
 
 
@@ -215,7 +241,7 @@ $(document).ready(function () {
 
         console.log('was-not-paired', arg);
 
-        alert(arg);
+        alertBox("Error",arg);
     });
     
     ipc.on('unpaired', function (event, arg) {
@@ -254,7 +280,44 @@ $(document).ready(function () {
             refreshPairedTable();
         }
     });
+    
+    
 
+    ipc.on('account-info', function (event, arg) {
+
+        if (setAccount(arg)) {
+            //refreshPairedTable();//no need for now
+        }
+    });
+
+    ipc.on('market-open', function (event, arg) {
+
+        console.log('market-open', arg);
+
+        if (setAccount(arg)) {
+            refreshPairedTable();
+        }
+    });
+
+
+    ipc.on('market-close', function (event, arg) {
+
+        console.log('market-close', arg);
+
+        if (setAccount(arg)) {
+            refreshPairedTable();
+        }
+    });
+
+
+    ipc.on('account-balance-changed', function (event, arg) {
+
+        console.log('account-balance-changed', arg);
+
+        if (setAccount(arg)) {
+            refreshPairedTable();
+        }
+    });
     
     ipc.on('place-order-paired', function (event, arg) {
 
@@ -273,7 +336,7 @@ $(document).ready(function () {
 
         addInfoLog(`Sending place order to [${arg.account.broker}, ${arg.account.account_number}]`);
 
-        if (setAccount(arg)) {
+        if (setAccount(arg.account)) {
             refreshPairedTable();
         }
     });
@@ -282,7 +345,11 @@ $(document).ready(function () {
 
         console.log('sync-place-order-success', arg);
 
-        addSuccessLog(`[${arg.broker}, ${arg.account_number}] place order successful.`);
+        var msg = `[${arg.broker}, ${arg.account_number}] place order successful.`;
+
+        addSuccessLog(msg);
+
+        alertify.success(msg);
 
         if (setAccount(arg)) {
             refreshPairedTable();
@@ -293,12 +360,51 @@ $(document).ready(function () {
 
         console.log('sync-place-order-fail', arg);
 
-        addErrorLog(`[${arg.broker}, ${arg.account_number}] place order failed! ${arg.last_error}`);
+        var msg = `[${arg.broker}, ${arg.account_number}] place order failed! ${arg.last_error}`;
+
+        addErrorLog(msg);
+
+        alertify.error(msg);
 
         if (setAccount(arg)) {
             refreshPairedTable();
         }
     });
+
+    ipc.on('sync-place-order-reject', function (event, error) {
+
+        console.log('sync-place-order-reject', error);
+
+        addErrorLog(error);
+
+        alertify.error(error, 0);
+
+    });
+
+
+    ipc.on('sending-validate-place-order', function (event, arg) {
+
+        console.log('sending-validate-place-order', arg);
+
+        addInfoLog(`Validating place order for [${arg.account.broker}, ${arg.account.account_number}]`);
+
+        setAccount(arg.account);
+        
+    });
+
+    ipc.on('validate-place-order-fail', function (event, arg) {
+
+        console.log('validate-place-order-fail', arg);
+
+        var msg = `[${arg.broker}, ${arg.account_number}] place order failed! ${arg.last_error}`;
+
+        alertBox("Failed",msg);
+
+        addErrorLog(msg);
+
+        setAccount(arg);
+        
+    });    
 
     ipc.on('sending-sync-copy', function (event, arg) {
 
@@ -329,6 +435,57 @@ $(document).ready(function () {
         addErrorLog(`[${arg.broker}, ${arg.account_number}] sync copy failed! ${arg.last_error}`);
 
         if (setAccount(arg)) {
+            refreshPairedTable();
+        }
+    });
+
+    ipc.on('sending-own-close', function (event, arg) {
+
+        console.log('sending-own-close', arg);
+
+        addInfoLog(`[${arg.account.broker}, ${arg.account.account_number}]  sending own close`);
+
+        if (setAccount(arg.account)) {
+            refreshPairedTable();
+        }
+    });
+
+
+    ipc.on('own-close-success', function (event, arg) {
+
+        console.log('own-close-success', arg);
+        var account = arg.account;
+        var force = arg.force;
+        var reason = arg.reason;
+
+        if (force) {
+            addInfoLog(`[${ account.broker }, ${ account.account_number }] ${reason}`);
+            alertify.success(`[${account.broker}, ${account.account_number}] ${reason}`, 0);
+        } else {
+            addSuccessLog(`[${account.broker}, ${account.account_number}] own close successful.`);
+        }
+
+        if (setAccount(account)) {
+            refreshPairedTable();
+        }
+    });
+
+    ipc.on('own-close-fail', function (event, arg) {
+
+        console.log('own-close-fail', arg);
+        var account = arg.account;
+        var force = arg.force;
+        var ticket = arg.ticket;
+        var msg = `[${account.broker}, ${account.account_number}] WARNING!!! Secure attempt to forcibly close order #${ticket} failed!`;
+
+        if (force) {
+            addErrorLog(msg);
+            alertify.error(msg, 0);
+        } else {
+            addErrorLog(`[${account.broker}, ${account.account_number}] own close failed! ${account.last_error}`);
+        }
+
+        if (setAccount(account)) {
             refreshPairedTable();
         }
     });
@@ -434,11 +591,26 @@ $(document).ready(function () {
     });
 
 
-    ipc.on('symbols-config', function (event, arg) {
+    ipc.on('app-config', function (event, arg) {
         if (arg) {
             mergeObjectTo(arg, AppConfig);
+            displayGeneralSettings();
             displaySymbolsConfiguration();
+            displayNotificationConfiguration();
         }
+    });
+
+
+    ipc.on('app-config-init-fail', function (event, arg) {
+
+        console.log('app-config-init-fail', arg);
+
+        var error = 'Something went wrong while initializing app configuration.';
+
+        addErrorLog(error);
+
+        alertBox('App Config Error', error);
+
     });
 
     ipc.on('symbols-config-save-success', function (event, arg) {
@@ -459,38 +631,229 @@ $(document).ready(function () {
         displaySymbolsConfiguration(false, false, false);
     });
 
+    ipc.on('notification-access-token-refresh-save-success', function (event, arg) {
 
-    ipc.on('settings', function (event, arg) {
+        addInfoLog(`New notification access token saved.`);
+
+    });
+
+    ipc.on('notification-access-token-refresh-save-fail', function (event, arg) {
+
+        addErrorLog(`Could not save new notification access token.`);
+
+    });
+
+    ipc.on('notification-access-token-refresh', function (event, arg) {
+
+        console.log('notification-access-token-refresh', arg);
+
+        addInfoLog(`Notification access token refreshed.`);
+
         if (arg) {
             mergeObjectTo(arg, AppConfig);
-            settings();
+            displayNotificationConfiguration();
         }
     });
 
-    ipc.on('settings-save-success', function (event, arg) {
+    ipc.on('general-settings-save-success', function (event, arg) {
 
-        console.log('settins-save-success', arg);
+        console.log('general-settins-save-success', arg);
 
         mergeObjectTo(arg, AppConfig);
-        settings(true);
+        displayGeneralSettings(true);
 
     });
 
 
-    ipc.on('settings-save-fail', function (event, arg) {
+    ipc.on('general-settings-save-fail', function (event, arg) {
 
-        console.log('settings-save-fail', arg);
+        console.log('general-settings-save-fail', arg);
 
-        settings(false);
+        displayGeneralSettings(false);
     });
 
 
+    ipc.on('email-notification-config-save-success', function (event, arg) {
+
+        console.log('email-notification-config-save-success', arg);
+
+        mergeObjectTo(arg, AppConfig);
+        displayNotificationConfiguration(true);
+
+    });
+
+
+    ipc.on('email-notification-config-save-fail', function (event, arg) {
+
+        console.log('email-notification-config-save-fail', arg);
+
+        displayNotificationConfiguration(false);
+    });
+
+
+    ipc.on('email-notification-connection-verify-success', function (event, arg) {
+
+        console.log('email-notification-connection-verify-success', arg);
+
+        displayNotificationConnectionVerificationFeedback(true);
+
+    });
+
+
+    ipc.on('email-notification-connection-verify-fail', function (event, error) {
+
+        console.log('email-notification-connection-verify-fail', error);
+
+        displayNotificationConnectionVerificationFeedback(false,error);
+
+    });
+
+    ipc.on('auto-lot-size-success', function (event, arg) {
+
+        console.log('auto-lot-size-success');
+
+        OnAutoLotSizeSuccess(arg);
+    });
+
+    ipc.on('auto-lot-size-fail', function (event, arg) {
+
+        alertBox("Failed",`[${arg.account.broker}, ${arg.account.account_number}] auto lot size failed! ${arg.error}`);
+
+    });
+
+
+    ipc.on('show-place-order-warning-alert', function (event, arg) {
+
+        confirmBox("Warning", arg.warning,
+            function () {
+                ipc.send('accept-warning-place-order',arg.uuid);
+            },
+            function () {
+                ipc.send('reject-warning-place-order', arg.uuid);
+            });
+
+    });
+
+
+    ipc.on('closing-all-trades', function (event, comment) {
+
+        addInfoLog(comment);
+        alertify.success(comment, 0);
+
+    });
+
+    ipc.on('place-order-trigger-rejected', function (event, msg) {
+
+        addErrorLog(msg);
+        alertify.error(msg, 0);
+
+    });
+
+
+    ipc.on('place-order-triggers', function (event, arg) {
+
+        console.log('place-order-triggers');
+
+        place_order_triggers = arg;
+        displayPlaceOrderTriggers();
+
+    });
+
+
+    ipc.on('place-order-triggers-clear', function (event, message) {
+
+        console.log('place-order-triggers-clear');
+
+        place_order_triggers = [];
+
+        alertify.success(message);
+
+        displayPlaceOrderTriggers();
+
+    });
+
+
+    ipc.on('cancel-place-order-trigger-success', function (event, arg) {
+
+        alertify.success('Place order trigger cancelled successfully.');
+
+        place_order_triggers = arg;
+        displayPlaceOrderTriggers();
+
+    });
+
+
+    ipc.on('cancel-place-order-trigger-fail', function (event, error) {
+
+        alertify.error(error);
+
+    });
+
+    ipc.on('place-order-trigger-not-found', function (event, error) {
+
+        alertify.error(error);
+        displayPlaceOrderTriggers();
+    });
+    
+
+    
 })
 
-function mergeObjectTo(obj1, obj2) {
-    for (var n in obj1) {
-        obj2[n] = obj1[n]; 
+function dailogBox(obj) {
+
+    var dialog = alertify[obj.type].apply(alertify, obj.params);    
+
+    dialog.set({
+        onclose: function () {
+            alertCollection.splice(0, 1);
+            nextDialog();
+        }
+    })
+
+}
+
+function nextDialog() {
+    
+    var obj = alertCollection[0];
+    if (obj) {
+        setImmediate(dailogBox, obj);  
     }
+}
+
+function doBox(type, argus) {
+    var params = [];
+    for (var i = 0; i < argus.length; i++) {
+        params[i] = argus[i];
+    }
+    var alertObj = {
+        type: type,
+        params: params
+    }
+
+    alertCollection.push(alertObj);
+
+    nextDialog();
+    
+}
+
+function alertBox() {
+    doBox('alert', arguments);
+}
+
+function confirmBox() {
+    doBox('confirm', arguments);
+}
+
+function promptBox() {
+    doBox('prompt', arguments);
+}
+
+function mergeObjectTo(fromObj, toObj) {
+    for (var n in fromObj) {
+        toObj[n] = fromObj[n]; 
+    }
+
+    return toObj;
 }
 
 function PlaceOrder() {
@@ -503,112 +866,436 @@ function PlaceOrder() {
 
     var selected_account_for_buy;
 
-    $("#place-order-dialog-subheading").html(`Sending instant order to account ${accountA.account_number} of ${accountA.broker} and ${accountB.account_number} of ${accountB.broker}`);
+    $("#place_order_dialog_subheading").html(`Sending instant order to account ${accountA.account_number} of ${accountA.broker} and ${accountB.account_number} of ${accountB.broker}`);
 
     
-    $('#place-order-dialog')
+    $('#place_order_dialog')
         .modal({
             closable: false,
             onDeny: function () {
-                
+
             },
             onApprove: function () {
 
                 var obj = {};
 
-                var account_for_buy_value = $('#place-order-dialog-accounts').dropdown('get value');
-                
+                var account_for_buy_value = $('#place_order_dialog_accounts').dropdown('get value');
+
 
                 if (!account_for_buy_value) {
-                    alert('Please select account for buy side!');
+                    alertBox("Invalid",'Please select account for buy side!');
                     return false;
                 }
 
 
-                var symbol = document.getElementById('place-order-dialog-symbols').value;
+                var trigger_type = document.getElementById('place_order_dialog_trigger').value;
+                var trigger_price = document.getElementById('place_order_dialog_trigger_price').value;
+                var max_percent_diff_in_account_balances = document.getElementById('place_order_dialog_percentage_difference_in_account_balances').value || Infinity;
                 
-                var lot_size = document.getElementById('place-order-dialog-lot-size').value;
+                var symbol = document.getElementById('place_order_dialog_symbols').value;
+
+                var lot_size_a = document.getElementById('place_order_dialog_lot_size_for_account_a').value;
+                var lot_size_b = document.getElementById('place_order_dialog_lot_size_for_account_b').value;
 
 
                 if (!symbol) {
-                    alert('Please select symbol!');
+                    alertBox("Invalid",'Please select symbol!');
                     return false;
                 }
 
 
-                if (!lot_size) {
-                    lot_size = 0;
+                if (!lot_size_a) {
+                    lot_size_a = 0;
+                }
+
+
+                if (!lot_size_b) {
+                    lot_size_b = 0;
+                }
+
+                if ((lot_size_a == 0 && lot_size_b != 0)
+                    || (lot_size_a != 0 && lot_size_b == 0)) {
+
+                    alertBox("Invalid",`Not allowed! Either specify lot size for both accounts or none for both (where the EA lot size settings will be used).`);
+
+                    return false;
                 }
 
                 var split = account_for_buy_value.split(',');
                 var broker = split[0].trim();
                 var account_number = split[1].trim();
 
-                var account = getAccount(broker, account_number);
+                var account_buy = getAccount(broker, account_number);
 
-                obj.account = account;
+
+                var broker_a = document.getElementById('place_order_dialog_lot_size_for_account_a').dataset.broker;
+                var account_number_a = document.getElementById('place_order_dialog_lot_size_for_account_a').dataset.accountNumber;
+
+                var broker_b =  document.getElementById('place_order_dialog_lot_size_for_account_b').dataset.broker;
+                var account_number_b = document.getElementById('place_order_dialog_lot_size_for_account_b').dataset.accountNumber;
+
+
+                var account_a = getAccount(broker_a, account_number_a);
+                var account_b = getAccount(broker_b, account_number_b);
+
+
+                obj.account_buy = account_buy;
+                obj.account_a = account_a;
+                obj.account_b = account_b;
                 obj.symbol = symbol;
-                obj.lot_size = lot_size;
+                obj.lot_size_a = lot_size_a;
+                obj.lot_size_b = lot_size_b;
+                obj.trigger_type = trigger_type;
+                obj.trigger_price = trigger_price;
+                obj.max_percent_diff_in_account_balances = max_percent_diff_in_account_balances;
+
+                if (obj.trigger_type != 'Instant now' && !obj.trigger_price) {
+                    alertBox("Invalid Price", 'Please enter valid trigger price!');
+                    return false;
+                }
 
                 if (!AppConfig.symbol[symbol]) {
-                    alert('Relative symbol not found!');
+                    alertBox("Not Found",'Relative symbol not found!');
                     return false;
                 }
 
 
                 if (!AppConfig.symbol[symbol][broker]) {
-                    alert(`Please configure the relative of ${symbol} for ${broker}!`);
+                    alertBox("Invalid",`Please configure the relative of ${symbol} for ${broker}!`);
                     return false;
                 }
 
                 var peer_broker = getPeerBroker(broker);
 
                 if (!peer_broker) {
-                    alert(`Could not find peer broker for ${broker}`);
+                    alertBox("Error",`Could not find peer broker for ${broker}`);
                     return false;
                 }
 
 
                 if (!AppConfig.symbol[symbol][peer_broker]) {
-                    alert(`Please configure the relative of ${symbol} for ${peer_broker}!`);
+                    alertBox("Attention",`Please configure the relative of ${symbol} for ${peer_broker}!`);
                     return false;
                 }
 
 
                 if (!AppConfig.spread[symbol] || AppConfig.spread[symbol] <= 0) {
-                    alert(`Spread for ${symbol} must be greater than zero!\nHint: refer to Symbols Configuration to set value greater than zero.`);
+                    alertBox("Invalid",`Spread for ${symbol} must be greater than zero!\nHint: refer to Symbols Configuration to set value greater than zero.`);
                     return false;
                 }
+                
+                confirmBox('Confirm', confirmTradeEntryHTML(obj),
+                    function () {
+                        if (obj.trigger_type == 'Instant now') {
+                            ipc.send('place-order', obj);
+                        } else {
+                            ipc.send('place-order-trigger', obj);
+                        }
+                        $('#place_order_dialog').modal('hide');
+                    },
+                    function () {
+                        
+                    });
 
-
-                ipc.send('place-order', obj);
-
+                return false;
             },
             onShow: function () {
 
-                $('#place-order-dialog-accounts')
+                $('#place_order_dialog_accounts')
                     .dropdown();
 
-                document.getElementById('place-order-dialog-acount-a-content').dataset.value = `${accountA.broker}, ${accountA.account_number}`;
-                document.getElementById('place-order-dialog-acount-a-content').dataset.broker = `${accountA.broker}`;
-                document.getElementById('place-order-dialog-acount-a-content').dataset.accountNumber = `${accountA.account_number}`;
-                $("#place-order-dialog-acount-a-image").attr('src', `${accountA.icon_file}`);
-                $("#place-order-dialog-acount-a-label").html(`${accountA.broker}, ${accountA.account_number}`);
+                document.getElementById('place_order_dialog_account_a_content').dataset.value = `${accountA.broker}, ${accountA.account_number}`;
+                document.getElementById('place_order_dialog_account_a_content').dataset.broker = `${accountA.broker}`;
+                document.getElementById('place_order_dialog_account_a_content').dataset.accountNumber = `${accountA.account_number}`;
+                $("#place_order_dialog_account_a_image").attr('src', `${accountA.icon_file}`);
+                $("#place_order_dialog_account_a_label").html(`${accountA.broker}, ${accountA.account_number}`);
 
 
-                document.getElementById('place-order-dialog-acount-b-content').dataset.value = `${accountB.broker}, ${accountB.account_number}`;
-                document.getElementById('place-order-dialog-acount-b-content').dataset.broker = `${accountB.broker}`;
-                document.getElementById('place-order-dialog-acount-b-content').dataset.accountNumber = `${accountB.account_number}`;
-                $("#place-order-dialog-acount-b-image").attr('src', `${accountB.icon_file}`);
-                $("#place-order-dialog-acount-b-label").html(`${accountB.broker}, ${accountB.account_number}`);
+                document.getElementById('place_order_dialog_account_b_content').dataset.value = `${accountB.broker}, ${accountB.account_number}`;
+                document.getElementById('place_order_dialog_account_b_content').dataset.broker = `${accountB.broker}`;
+                document.getElementById('place_order_dialog_account_b_content').dataset.accountNumber = `${accountB.account_number}`;
+                $("#place_order_dialog_account_b_image").attr('src', `${accountB.icon_file}`);
+                $("#place_order_dialog_account_b_label").html(`${accountB.broker}, ${accountB.account_number}`);
 
-                document.getElementById('place-order-dialog-symbols').innerHTML = placeOrderDropdownSymbolsHTML();
+                document.getElementById('place_order_dialog_symbols').innerHTML = placeOrderDropdownSymbolsHTML();
+
+                $("#place_order_dialog_label_lot_size_for_account_a").html(`${accountA.broker}, ${accountA.account_number}`);
+                $("#place_order_dialog_label_lot_size_for_account_b").html(`${accountB.broker}, ${accountB.account_number}`);
+
+                document.getElementById('place_order_dialog_lot_size_for_account_a').dataset.broker = `${accountA.broker}`;
+                document.getElementById('place_order_dialog_lot_size_for_account_a').dataset.accountNumber = `${accountA.account_number}`;
+
+                document.getElementById('place_order_dialog_lot_size_for_account_b').dataset.broker = `${accountB.broker}`;
+                document.getElementById('place_order_dialog_lot_size_for_account_b').dataset.accountNumber = `${accountB.account_number}`;
+
+                document.getElementById('place_order_dialog_trigger_price').value = accountA.chart_market_price;
+
+                var symbol = generalSymbol(accountA, accountB);
+
+                document.getElementById('place_order_dialog_symbols').value = symbol;
+
+                autoLotSize(symbol);
+
+                $('#place_order_dialog_use_auto_computed_lot_size_checkbox')
+                    .checkbox({
+                        
+                        onChecked: function () {
+
+                            document.getElementById('place_order_dialog_lot_size_for_account_a').disabled = "disabled";
+                            document.getElementById('place_order_dialog_lot_size_for_account_b').disabled = "disabled";
+                            autoLotSize();
+                        },
+                        
+                        onUnchecked: function () {
+
+                            document.getElementById('place_order_dialog_lot_size_for_account_a').disabled = false;
+                            document.getElementById('place_order_dialog_lot_size_for_account_b').disabled = false;
+
+                        }
+                    });
 
             }
         })
         .modal('show')
 }
 
+function confirmTradeEntryHTML(obj) {
+
+    var html = `
+                <i>Please confirm again if the following entries you entered is correct.</i>
+
+                <table class="ui compact celled definition structured table">
+                    <thead class="full-width">
+                            <tr>
+                                <th colspan="1"></th>
+                                <th>
+                                        <h4 class="ui image header">
+                                            <img src="${obj.account_a.icon_file}">
+                                            <div class="content">
+                                                ${obj.account_a.broker}
+                                                <div class="sub header">
+                                                    ${obj.account_a.account_number} - ${accountTypeText(obj.account_a)} on ${obj.account_a.platform_type}
+                                                </div>
+                                            </div>
+                                        </h4>
+                                </th>
+
+                                <th>
+                                        <h4 class="ui image header">
+                                            <img src="${obj.account_b.icon_file}">
+                                            <div class="content">
+                                                ${obj.account_b.broker}
+                                                <div class="sub header">
+                                                    ${obj.account_b.account_number} - ${accountTypeText(obj.account_b)} on ${obj.account_b.platform_type}
+                                                </div>
+                                            </div>
+                                        </h4>
+
+                                </th>
+                          </tr>
+
+                          <tr>
+                            <th>TRIGGER CONDITION</th>
+                            <th colspan="2">${obj.trigger_type}</th>
+                          </tr>
+                          <tr>
+                            <th>TRIGGER PRICE</th>
+                            <th colspan="2" ${obj.trigger_type == 'Instant now' ? 'style="font-style: italic;"' : ''}>${obj.trigger_type == 'Instant now' ? 'At market price' : obj.trigger_price}</th>
+                          </tr>
+                          <tr>
+                            <th>SYMBOL</th>
+                            <th colspan="2">${obj.symbol}</th>
+                          </tr>
+                          <tr>
+                            <th>MAX. ACCOUNT BALANCES DIFF. %</th>
+                            <th colspan="2">${obj.max_percent_diff_in_account_balances}</th>
+                          </tr>
+                    </thead>
+                    <tbody>
+                          <tr>
+                            <td>POSITION</td>
+                            <td>${obj.account_a.broker == obj.account_buy.broker && obj.account_a.account_number == obj.account_buy.account_number ? 'BUY' : 'SELL'}</td>
+                            <td>${obj.account_a.broker == obj.account_buy.broker && obj.account_a.account_number == obj.account_buy.account_number ? 'SELL' : 'BUY'}</td>
+                          </tr>
+                          <tr>
+                            <td>LOT SIZE</td>
+                            <td>${obj.lot_size_a}</td>
+                            <td>${obj.lot_size_b}</td>
+                          </tr>
+                    </tbody>
+                    <tfoot class="full-width">
+                    </tfoot>
+                 </table>
+            `;
+
+
+    return html;
+}
+
+function generalSymbol(accountA, accountB) {
+
+    for (var symbol in AppConfig.symbol) {
+        var symbolsObj = AppConfig.symbol[symbol];
+        if (symbolsObj[accountA.broker] == accountA.chart_symbol
+            && symbolsObj[accountB.broker] == accountB.chart_symbol) {
+            return symbol;
+        }
+    }
+    return '';
+}
+
+function OnTriggerSelected(el) {
+    var trgEl = document.getElementById('place_order_dialog_trigger_price');
+    if (el.value == 'Instant now') {
+        trgEl.disabled = true;
+    } else {
+        trgEl.disabled = false;
+    }
+}
+
+function OnAutoLotSizeSuccess(obj) {
+
+
+    var broker_a = document.getElementById('place_order_dialog_lot_size_for_account_a').dataset.broker;
+    var account_number_a = document.getElementById('place_order_dialog_lot_size_for_account_a').dataset.accountNumber;
+
+    var broker_b = document.getElementById('place_order_dialog_lot_size_for_account_b').dataset.broker;
+    var account_number_b = document.getElementById('place_order_dialog_lot_size_for_account_b').dataset.accountNumber;
+
+    if (broker_a != obj.account_a.broker
+        || account_number_a != obj.account_a.account_number
+        || broker_b != obj.account_b.broker
+        || account_number_b != obj.account_b.account_number) {
+        alertBox("Rejected","Account selection has change! auto lot size rejected.")
+        return;
+    }
+
+    if (document.getElementById('place_order_dialog_use_auto_computed_lot_size').checked) {
+
+        document.getElementById('place_order_dialog_lot_size_for_account_a').value = obj.lot_size_a;
+        document.getElementById('place_order_dialog_lot_size_for_account_b').value = obj.lot_size_b;
+
+    }
+
+}
+
+function autoLotSize(symbol) {
+
+    var broker_a = document.getElementById('place_order_dialog_lot_size_for_account_a').dataset.broker;
+    var account_number_a = document.getElementById('place_order_dialog_lot_size_for_account_a').dataset.accountNumber;
+
+    var broker_b = document.getElementById('place_order_dialog_lot_size_for_account_b').dataset.broker;
+    var account_number_b = document.getElementById('place_order_dialog_lot_size_for_account_b').dataset.accountNumber;
+
+    var account_a = getAccount(broker_a, account_number_a);
+    var account_b = getAccount(broker_b, account_number_b);
+
+    if (!symbol) {
+        symbol = document.getElementById('place_order_dialog_symbols').value;
+    }
+
+    ipc.send('auto-compute-lot-size', {
+        account_a: account_a,
+        account_b: account_b,
+        symbol: symbol//for now this is not neccessary
+    });
+}
+
+function onSelectPlaceOrderSymbol(el) {
+    autoLotSize(el.value);
+}
+
+function onSelectAuthType(el) {
+
+    if (el.value == "Login") {
+        document.getElementById("notification_username").disabled = false;
+        document.getElementById("notification_password").disabled = false;
+        document.getElementById("notification_client_id").disabled = "disabled";
+        document.getElementById("notification_client_secret").disabled = "disabled";
+        document.getElementById("notification_access_token").disabled = "disabled";
+        document.getElementById("notification_refresh_token").disabled = "disabled";
+        document.getElementById("notification_expiration_time").disabled = "disabled";
+        document.getElementById("notification_access_url").disabled = "disabled";
+
+    } else if(el.value == "OAuth2"){
+        document.getElementById("notification_username").disabled = false;
+        document.getElementById("notification_password").disabled = "disabled";
+        document.getElementById("notification_client_id").disabled = false;
+        document.getElementById("notification_client_secret").disabled = false;
+        document.getElementById("notification_access_token").disabled = false;
+        document.getElementById("notification_refresh_token").disabled = false;
+        document.getElementById("notification_expiration_time").disabled = false;
+        document.getElementById("notification_access_url").disabled = false;
+    }
+
+}
+
+function getEmailNotificationSettinsgObj() {
+    var obj = {};
+
+    obj.send_notification_at_margin_call = document.getElementById('send_notification_at_margin_call').checked;
+    obj.send_notification_at_percentage_close_to_stopout = document.getElementById('send_notification_at_percentage_close_to_stopout').checked;
+    
+    obj.send_notification_at_percentage_close_to_stopout_input = document.getElementById('send_notification_at_percentage_close_to_stopout_input').value;
+    obj.send_notification_session_information_every_interval_in_seconds = document.getElementById('send_notification_session_information_every_interval_in_seconds').value;
+
+    obj.send_notification_session_information_only_when_market_is_open = document.getElementById('send_notification_session_information_only_when_market_is_open').checked;
+
+    obj.notification_sender_email_address = document.getElementById('notification_sender_email_address').value;
+    obj.notification_recipient_email_address = document.getElementById('notification_recipient_email_address').value;
+
+    obj.notification_pool_connection = document.getElementById('notification_pool_connection').checked;
+    obj.notification_secure_connection = document.getElementById('notification_secure_connection').checked;
+    obj.notification_fail_on_invalid_certs = document.getElementById('notification_fail_on_invalid_certs').checked;
+
+    obj.notification_smtp_host = document.getElementById('notification_smtp_host').value;
+    obj.notification_smtp_port = document.getElementById('notification_smtp_port').value;
+    obj.notification_auth_type = document.getElementById('notification_auth_type').value;
+    obj.notification_username = document.getElementById('notification_username').value;
+    obj.notification_password = document.getElementById('notification_password').value;
+    obj.notification_client_id = document.getElementById('notification_client_id').value;
+    obj.notification_client_secret = document.getElementById('notification_client_secret').value;
+    obj.notification_access_token = document.getElementById('notification_access_token').value;
+    obj.notification_refresh_token = document.getElementById('notification_refresh_token').value;
+    obj.notification_expiration_time = document.getElementById('notification_expiration_time').value;
+    obj.notification_access_url = document.getElementById('notification_access_url').value;
+
+    return obj;    
+}
+
+function setElValue(obj, prop, el) {
+    if (el.type == 'radio' || el.type == 'checkbox') {
+        if (obj[prop] == true || obj[prop] == false) {
+            el.checked = obj[prop];
+        }
+    } else {
+        if (obj[prop] !== null && obj[prop] !== undefined) {
+            el.value = obj[prop];
+        }
+    }
+}
+
+function SaveNotificationSettings() {
+
+    var app_config = {};
+
+    mergeObjectTo(AppConfig, app_config);
+
+    var obj = getEmailNotificationSettinsgObj();
+
+    mergeObjectTo(obj, app_config);
+
+    ipc.send('save-email-notification-config', app_config);
+}
+
+
+function VerifyNoticationConnection() {
+
+    var obj = getEmailNotificationSettinsgObj();
+
+    ipc.send('verify-email-notification-connection', obj);
+
+}
 
 function placeOrderDropdownSymbolsHTML() {
     var html = '<option value="">Select</option>';
@@ -633,32 +1320,41 @@ function getPeerBroker(broker) {
 }
 
 function hideCenterContents() {
-    $("#center-content-main").hide();
-    $("#center-content-pairing").hide();
-    $("#center-content-metrics").hide();
-    $("#center-content-symbols-configuration").hide();
-    $("#center-content-output").hide();
-    $("#center-content-settings").hide();
+    $("#center_content_main").hide();
+    $("#center_content_place_order_triggers").hide();
+    $("#center_content_pairing").hide();
+    $("#center_content_metrics").hide();
+    $("#center_content_output").hide();
+    $("#center_content_settings").hide();
+    
 
-    $('#btn-main').removeClass('active');
-    $('#btn-pairing').removeClass('active');
-    $('#btn-metrics').removeClass('active');
-    $('#btn-symbols-configuration').removeClass('active');
-    $('#btn-output').removeClass('active');
-    $('#btn-settings').removeClass('active');
+    $('#btn_main').removeClass('active');
+    $('#btn_place_order_triggers').removeClass('active');
+    $('#btn_pairing').removeClass('active');
+    $('#btn_metrics').removeClass('active');
+    $('#btn_output').removeClass('active');
+    $('#btn_settings').removeClass('active');
 }
 
 function showMain(){
 
     hideCenterContents();
-    $('#btn-main').addClass('active');
-    $('#center-content-main').fadeIn();
+    $('#btn_main').addClass('active');
+    $('#center_content_main').fadeIn();
+}
+
+function displayPlaceOrderTriggers() {
+    document.getElementById('trigger_count').innerHTML = place_order_triggers.length;
+    var html = placeOrderTriggersHTML();
+    if (html) {
+        document.getElementById('center_content_place_order_triggers').innerHTML = html;
+    }
 }
 
 function displayMetrics() {
     var html = orderMetricsHTML();
     if (html) {
-        document.getElementById('center-content-metrics').innerHTML = html;
+        document.getElementById('center_content_metrics').innerHTML = html;
     }
 }
 
@@ -667,7 +1363,7 @@ function displaySymbolsConfiguration(edit, add, saved) {
 
     var html = symbolsConfigurationHTML(edit, add, saved);
     if (html) {
-        document.getElementById('center-content-symbols-configuration').innerHTML = html;
+        document.getElementById('center_content_symbols_configuration').innerHTML = html;
     }
 }
 
@@ -680,7 +1376,7 @@ function EditConfigSymbol() {
 }
 
 function SaveConfigSymbol() {
-    var table = document.getElementById('center-content-symbols-configuration-table');
+    var table = document.getElementById('center_content_symbols_configuration_table');
     if (!table) {
         return;
     }
@@ -733,10 +1429,7 @@ function SaveConfigSymbol() {
 
     var app_config = {};
 
-    //copy form AppConfig
-    for (var n in AppConfig) {
-        app_config[n] = AppConfig[n];
-    }
+    mergeObjectTo(AppConfig, app_config);
 
     //modify
     app_config['symbol'] = rel_broker_symbols;
@@ -746,57 +1439,140 @@ function SaveConfigSymbol() {
 }
 
 function SaveSettings() {
-    var only_pair_live_accounts_with_same_account_name = document.getElementById('settings-only-pair-live-accounts-with-same-account-name').checked;
-    var sync_check_interval_in_seconds = document.getElementById('settings-sync-check-interval-in-seconds').value;
-    var maximum_log_records = document.getElementById('settings-maximum-log-records').value;
+    var only_pair_live_accounts_with_same_account_name = document.getElementById('only_pair_live_accounts_with_same_account_name').checked;
+    var show_waning_message_if_loss_is_possible = document.getElementById('show_waning_message_if_loss_is_possible').checked;
+    var sync_check_interval_in_seconds = document.getElementById('sync_check_interval_in_seconds').value;
+    var maximum_log_records = document.getElementById('maximum_log_records').value;
+    var refresh_account_info_interval_in_seconds = document.getElementById('refresh_account_info_interval_in_seconds').value;
+    var automatically_avoid_loss_due_to_tomorrow_swap_by_closing_trades_before_swap_time = document.getElementById('automatically_avoid_loss_due_to_tomorrow_swap_by_closing_trades_before_swap_time').value;
+    
+    
+    var app_config = {};
 
-    var app_config = {
-    };
-
-    //copy form AppConfig
-    for (var n in AppConfig) {       
-       app_config[n] = AppConfig[n];       
-    }
+    mergeObjectTo(AppConfig, app_config);
 
     //modify
     app_config['only_pair_live_accounts_with_same_account_name'] = only_pair_live_accounts_with_same_account_name;
+    app_config['show_waning_message_if_loss_is_possible'] = show_waning_message_if_loss_is_possible;   
     app_config['sync_check_interval_in_seconds'] = sync_check_interval_in_seconds;
     app_config['maximum_log_records'] = maximum_log_records;
+    app_config['refresh_account_info_interval_in_seconds'] = refresh_account_info_interval_in_seconds;
+    app_config['automatically_avoid_loss_due_to_tomorrow_swap_by_closing_trades_before_swap_time'] = automatically_avoid_loss_due_to_tomorrow_swap_by_closing_trades_before_swap_time;
 
-    ipc.send('save-settings', app_config);
+    ipc.send('save-general-settings', app_config);
 
 }
 
 function settings(saved) {
+    displayGeneralSettings(saved);
+    displaySymbolsConfiguration(false, false, saved);
+    displayNotificationConfiguration(saved);
+}
 
-    document.getElementById('settings-only-pair-live-accounts-with-same-account-name').checked = AppConfig['only_pair_live_accounts_with_same_account_name'];
-    document.getElementById('settings-sync-check-interval-in-seconds').value = AppConfig['sync_check_interval_in_seconds'] || DEFAULT_SYNC_CHECK_INTERVAL;
+function displayGeneralSettings(saved) {
 
-    MaxLogRecords = (AppConfig['maximum_log_records'] || MaxLogRecords) - 0;//implicitly convert to numeric
-    document.getElementById('settings-maximum-log-records').value = MaxLogRecords;
-
-
+    document.getElementById('only_pair_live_accounts_with_same_account_name').checked = AppConfig['only_pair_live_accounts_with_same_account_name'];
+    document.getElementById('show_waning_message_if_loss_is_possible').checked = AppConfig['show_waning_message_if_loss_is_possible'];    
+    document.getElementById('sync_check_interval_in_seconds').value = AppConfig['sync_check_interval_in_seconds'];
+    document.getElementById('maximum_log_records').value = AppConfig['maximum_log_records'];   
+    document.getElementById('refresh_account_info_interval_in_seconds').value = AppConfig['refresh_account_info_interval_in_seconds'];
+    document.getElementById('automatically_avoid_loss_due_to_tomorrow_swap_by_closing_trades_before_swap_time').value = AppConfig['automatically_avoid_loss_due_to_tomorrow_swap_by_closing_trades_before_swap_time'];
+    
     //feed back
     if (saved === true) {
-        document.getElementById('settings-feedback').className = "ui success message"
-        document.getElementById('settings-message-title').innerHTML = 'Success';
-        document.getElementById('settings-message-body').innerHTML = 'Saved settings successfully';
-        document.getElementById('settings-feedback').style.display = "block";
-        $('settings-feedback').fadeIn();
+        document.getElementById('settings_feedback').className = "ui success message"
+        document.getElementById('settings_message_title').innerHTML = 'Success';
+        document.getElementById('settings_message_body').innerHTML = 'Saved settings successfully';
+        document.getElementById('settings_feedback').style.display = "block";
+        $('#settings_feedback').fadeIn();
     } else if (saved === false) {
-        document.getElementById('settings-feedback').className = "ui error message"
-        document.getElementById('settings-message-title').innerHTML = 'Failed';
-        document.getElementById('settings-message-body').innerHTML = 'Failed to save the settings';
-        document.getElementById('settings-feedback').style.display = "block";
-        $('settings-feedback').fadeIn();
+        document.getElementById('settings_feedback').className = "ui error message"
+        document.getElementById('settings_message_title').innerHTML = 'Failed';
+        document.getElementById('settings_message_body').innerHTML = 'Failed to save the settings';
+        document.getElementById('settings_feedback').style.display = "block";
+        $('#settings_feedback').fadeIn();
     } else {
-        $('settings-feedback').hide();
-        document.getElementById('settings-feedback').className = ""
-        document.getElementById('settings-message-title').innerHTML = '';
-        document.getElementById('settings-message-body').innerHTML = '';
-        
+        $('#settings_feedback').hide();
+        document.getElementById('settings_feedback').className = ""
+        document.getElementById('settings_message_title').innerHTML = '';
+        document.getElementById('settings_message_body').innerHTML = '';
+
     }
+
+}
+
+
+function displayNotificationConfiguration(saved) {
+
     
+    setElValue(AppConfig, 'send_notification_at_margin_call', document.getElementById('send_notification_at_margin_call'));
+    setElValue(AppConfig, 'send_notification_at_percentage_close_to_stopout', document.getElementById('send_notification_at_percentage_close_to_stopout'));
+    setElValue(AppConfig, 'send_notification_at_percentage_close_to_stopout_input', document.getElementById('send_notification_at_percentage_close_to_stopout_input'));
+    setElValue(AppConfig, 'send_notification_session_information_every_interval_in_seconds', document.getElementById('send_notification_session_information_every_interval_in_seconds'));
+    setElValue(AppConfig, 'send_notification_session_information_only_when_market_is_open', document.getElementById('send_notification_session_information_only_when_market_is_open'));
+    
+
+    setElValue(AppConfig, 'notification_sender_email_address', document.getElementById('notification_sender_email_address'));
+    setElValue(AppConfig, 'notification_recipient_email_address', document.getElementById('notification_recipient_email_address'));
+
+    setElValue(AppConfig, 'notification_pool_connection', document.getElementById('notification_pool_connection'));
+    setElValue(AppConfig, 'notification_secure_connection', document.getElementById('notification_secure_connection'));
+    setElValue(AppConfig, 'notification_fail_on_invalid_certs', document.getElementById('notification_fail_on_invalid_certs'));
+
+    setElValue(AppConfig, 'notification_smtp_host', document.getElementById('notification_smtp_host'));
+    setElValue(AppConfig, 'notification_smtp_port', document.getElementById('notification_smtp_port'));
+    setElValue(AppConfig, 'notification_auth_type', document.getElementById('notification_auth_type'));
+    setElValue(AppConfig, 'notification_username', document.getElementById('notification_username'));
+    setElValue(AppConfig, 'notification_password', document.getElementById('notification_password'));
+    setElValue(AppConfig, 'notification_client_id', document.getElementById('notification_client_id'));
+    setElValue(AppConfig, 'notification_client_secret', document.getElementById('notification_client_secret'));
+    setElValue(AppConfig, 'notification_access_token', document.getElementById('notification_access_token'));
+    setElValue(AppConfig, 'notification_refresh_token', document.getElementById('notification_refresh_token'));
+    setElValue(AppConfig, 'notification_expiration_time', document.getElementById('notification_expiration_time'));
+    setElValue(AppConfig, 'notification_access_url', document.getElementById('notification_access_url'));
+
+
+    if (saved == true) {
+        document.getElementById('notification_feedback').className = "ui success message"
+        document.getElementById('notification_message_title').innerHTML = 'Success';
+        document.getElementById('notification_message_body').innerHTML = 'Saved configuration successfully';
+        document.getElementById('notification_feedback').style.display = "block";
+        $('#notification_feedback').fadeIn();
+    } else if(saved == false){
+        document.getElementById('notification_feedback').className = "ui error message"
+        document.getElementById('notification_message_title').innerHTML = 'Failed';
+        document.getElementById('notification_message_body').innerHTML = "Failed to save the configuration";
+        document.getElementById('notification_feedback').style.display = "block";
+        $('#notification_feedback').fadeIn();
+    } else {
+        $('#notification_feedback').hide();
+        document.getElementById('notification_feedback').className = ""
+        document.getElementById('notification_message_title').innerHTML = '';
+        document.getElementById('notification_message_body').innerHTML = '';
+
+    }
+
+
+
+}
+
+
+function displayNotificationConnectionVerificationFeedback(success, error) {
+
+
+    if (success) {
+        document.getElementById('notification_feedback').className = "ui success message"
+        document.getElementById('notification_message_title').innerHTML = 'Success';
+        document.getElementById('notification_message_body').innerHTML = 'Connection verified successfully';
+        document.getElementById('notification_feedback').style.display = "block";
+        $('#notification_feedback').fadeIn();
+    } else {
+        document.getElementById('notification_feedback').className = "ui error message"
+        document.getElementById('notification_message_title').innerHTML = 'Failed';
+        document.getElementById('notification_message_body').innerHTML = error;
+        document.getElementById('notification_feedback').style.display = "block";
+        $('#notification_feedback').fadeIn();
+    }
 
 }
 
@@ -819,12 +1595,122 @@ function storeOrder(account) {
     }
 }
 
+function CancelTrigger(uuid) {
+    confirmBox('Confirm', 'Are you sure you want to cancel the place order trigger?',
+        function () {
+            ipc.send('cancel-place-order-trigger', uuid);
+        },
+        function () {
+        });
+
+}
+
+function noDataHTML(info) {
+    return `<div style= "width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; font-size: 72px; font-style: bold; color: #ccc; text-shadow: 0px 1px 2px #555;">
+                    ${info? info: 'No Data'}
+            </div>`
+}
+
+function placeOrderTriggersHTML() {
+
+    var tables = '';
+    
+    for (var n in place_order_triggers) {
+
+        var trigger = place_order_triggers[n];
+
+        var pair = findPair(trigger.buy_trader.broker, trigger.buy_trader.account_number);
+        if (!pair) {
+            continue;
+        }
+        var accountA = pair[0];
+        var accountB = pair[1];
+
+        tables += `
+            <div class="ui teal segment">
+
+                <div class="ui right floated small basic labeled icon button" onclick="CancelTrigger('${trigger.uuid}')">
+                      <i class="close icon"></i> Cancel Trigrer
+                </div>
+                <table class="ui compact celled definition structured table">
+                    <thead class="full-width">
+                            <tr>
+                                <th colspan="1"></th>
+                                <th>
+                                        <h4 class="ui image header">
+                                            <img src="${accountA.icon_file}">
+                                            <div class="content">
+                                                ${accountA.broker}
+                                                <div class="sub header">
+                                                    ${accountA.account_number} - ${accountTypeText(accountA)} on ${accountA.platform_type}
+                                                </div>
+                                            </div>
+                                        </h4>
+                                </th>
+
+                                <th>
+                                        <h4 class="ui image header">
+                                            <img src="${accountB.icon_file}">
+                                            <div class="content">
+                                                ${accountB.broker}
+                                                <div class="sub header">
+                                                    ${accountB.account_number} - ${accountTypeText(accountB)} on ${accountB.platform_type}
+                                                </div>
+                                            </div>
+                                        </h4>
+
+                                </th>
+                          </tr>
+
+                          <tr>
+                            <th>TRIGGER CONDITION</th>
+                            <th colspan="2">${trigger.type}</th>
+                          </tr>
+                          <tr>
+                            <th>TRIGGER PRICE</th>
+                            <th colspan="2" ${trigger.type == 'Instant now' ? 'style="font-style: italic;"' : ''}>${trigger.type == 'Instant now' ? 'At market price' : trigger.price}</th>
+                          </tr>
+                          <tr>
+                            <th>SYMBOL</th>
+                            <th colspan="2">${trigger.symbol}</th>
+                          </tr>
+                    </thead>
+                    <tbody>
+                          <tr>
+                            <td>POSITION</td>
+                            <td>${accountA.broker == trigger.buy_trader.broker && accountA.account_number == trigger.buy_trader.account_number ? 'BUY' : 'SELL'}</td>
+                            <td>${accountA.broker == trigger.buy_trader.broker && accountA.account_number == trigger.buy_trader.account_number ? 'SELL' : 'BUY'}</td>
+                          </tr>
+                          <tr>
+                            <td>LOT SIZE</td>
+                            <td>${accountA.broker == trigger.buy_trader.broker && accountA.account_number == trigger.buy_trader.account_number ? trigger.buy_lot_size : trigger.sell_lot_size}</td>
+                            <td>${accountA.broker == trigger.buy_trader.broker && accountA.account_number == trigger.buy_trader.account_number ? trigger.sell_lot_size : trigger.buy_lot_size}</td>
+                          </tr>
+                    </tbody>
+                    <tfoot class="full-width">
+                        <tr>
+                            <th colspan="3" style="font-style: italic;">${trigger.remark}</th>
+                        </tr>
+                    </tfoot>
+                 </table>
+            </div>`;
+    }
+
+    if (!tables) {
+        tables = noDataHTML('No Trigger');
+    }
+
+    return tables;
+}
+
 function orderMetricsHTML() {
 
     var tables = '';
     
 
     for (var n in orders) {
+
+        var order = orders[n];
 
         var orderA = orders[order.ticket];
         var orderB = orders[order.peer_ticket];
@@ -877,6 +1763,12 @@ function orderMetricsHTML() {
 
 
     }
+
+
+    if (!tables) {
+        tables = noDataHTML('No Metric');
+    }
+
 
     return tables;
 }
@@ -1016,7 +1908,7 @@ function symbolsConfigurationHTML(edit, add, saved) {
     }
 
     var table = `<div style='width: 100%; overflow: auto; margin-bottom: 20px; padding-top: 20px;'>
-                        <table  class="ui compact celled definition structured table sixteen wide column" id='center-content-symbols-configuration-table'>
+                        <table  class="ui compact celled definition structured table sixteen wide column" id='center_content_symbols_configuration_table'>
                          <thead>
                            ${head_row} 
                          </thead>
@@ -1100,18 +1992,36 @@ function cellContent(str, alt) {
 }
 
 function orderMetricsTableContentID(order) {
-    return `table-${order.ticket}`;
+    return `table_${order.ticket}`;
 }
 
 function orderMetricsTableColumnAID(order) {
-    return `table-col-a-${order.ticket}`;
+    return `table_col_a_${order.ticket}`;
 }
 
 function orderMetricsTableColumnBID(order) {
-    return `table-col-b-${order.peer_ticket}`;
+    return `table_col_b_${order.peer_ticket}`;
+}
+
+function findPair(broker, account_number) {
+
+    for (var i in paired_accounts) {
+        var accountA = paired_accounts[i][0];
+        var accountB = paired_accounts[i][1];
+
+        if (accountA.broker == broker && accountA.account_number == account_number) {
+            return paired_accounts[i];
+        }
+
+        if (accountB.broker == broker && accountB.account_number == account_number) {
+            return paired_accounts[i];
+        }
+    }
+
 }
 
 function getAccount(broker, account_number) {
+
     for (var i in unpaired_accounts) {
         if (unpaired_accounts[i].broker == broker && unpaired_accounts[i].account_number == account_number) {
             return unpaired_accounts[i];
@@ -1135,16 +2045,16 @@ function getAccount(broker, account_number) {
 function pairingComponent() {
 
     if (Object.keys(paired_accounts).length > 0 && unpaired_accounts.length == 0) {
-        document.getElementById('pairing-number-info').innerHTML = 'All accounts are paired!';
-        document.getElementById('pairing-number-info').style.color = '#4DBD33';
+        document.getElementById('pairing_number_info').innerHTML = 'All accounts are paired!';
+        document.getElementById('pairing_number_info').style.color = '#4DBD33';
     }
 
     if (unpaired_accounts.length > 0) {
-        document.getElementById('pairing-number-info').innerHTML = unpaired_accounts.length > 1 ?
+        document.getElementById('pairing_number_info').innerHTML = unpaired_accounts.length > 1 ?
             `${unpaired_accounts.length}  accounts remain unpaired!` :
             `${unpaired_accounts.length}  account remains unpaired!`;
 
-        document.getElementById('pairing-number-info').style.color = '#222222';
+        document.getElementById('pairing_number_info').style.color = '#222222';
     }
 
 
@@ -1155,7 +2065,7 @@ function pairingComponent() {
 
 function populatePairingDropdownA() {
     
-    var el = document.getElementById("pairing-accounts-dropdown-a")
+    var el = document.getElementById("pairing_accounts_dropdown_a")
     var menu = el.querySelector('.menu');
 
     for (var i in unpaired_accounts) {
@@ -1199,7 +2109,7 @@ function populatePairingDropdownA() {
     }
 
 
-    $('#pairing-accounts-dropdown-a')
+    $('#pairing_accounts_dropdown_a')
         .dropdown({
             onChange: function (value, text, $selectedItem) {
 
@@ -1211,9 +2121,6 @@ function populatePairingDropdownA() {
 
                 populatePairingDropdownB();//update the other dropdown to exclude the selected one
 
-                console.log(value);
-                console.log(text);
-                console.log($selectedItem);
 
             }
         });
@@ -1222,7 +2129,7 @@ function populatePairingDropdownA() {
 
 function populatePairingDropdownB() {
 
-    var el = document.getElementById("pairing-accounts-dropdown-b")
+    var el = document.getElementById("pairing_accounts_dropdown_b")
     var menu = el.querySelector('.menu');
 
     for (var i in unpaired_accounts) {
@@ -1265,7 +2172,7 @@ function populatePairingDropdownB() {
 
 
 
-    $('#pairing-accounts-dropdown-b')
+    $('#pairing_accounts_dropdown_b')
         .dropdown({
             onChange: function (value, text, $selectedItem) {
 
@@ -1278,10 +2185,6 @@ function populatePairingDropdownB() {
                 populatePairingDropdownA();//update the other dropdown to exclude the selected one
 
 
-                console.log(value);
-                console.log(text);
-                console.log($selectedItem);
-
             }
         });
         
@@ -1290,7 +2193,7 @@ function populatePairingDropdownB() {
 
 function populatePairedAccountTable() {
 
-    var table = document.getElementById("pairing-accounts-paired-table")
+    var table = document.getElementById("pairing_accounts_paired_table")
     var rows = table.rows;
 
     for (var i in paired_accounts) {
@@ -1309,18 +2212,18 @@ function populatePairedAccountTable() {
                 continue;
             }
 
-            var cellAcountA = row.cells[1].firstElementChild;//second cell
-            var cellAcountB = row.cells[2].firstElementChild;//third cell
+            var cellAccountA = row.cells[1].firstElementChild;//second cell
+            var cellAccountB = row.cells[2].firstElementChild;//third cell
 
-            if (!cellAcountA.dataset || !cellAcountB.dataset) {
+            if (!cellAccountA.dataset || !cellAccountB.dataset) {
                 continue;
             }
 
-            var brokerA = cellAcountA.dataset.broker;
-            var account_numberA = cellAcountA.dataset.accountNumber;
+            var brokerA = cellAccountA.dataset.broker;
+            var account_numberA = cellAccountA.dataset.accountNumber;
 
-            var brokerB = cellAcountB.dataset.broker;
-            var account_numberB = cellAcountB.dataset.accountNumber;
+            var brokerB = cellAccountB.dataset.broker;
+            var account_numberB = cellAccountB.dataset.accountNumber;
 
             if ((brokerA == paired_brokerA
                 && account_numberA == paired_account_numberA
@@ -1341,7 +2244,7 @@ function populatePairedAccountTable() {
         if (!found) {
             var accountA = getAccount(paired_brokerA, paired_account_numberA);
             var accountB = getAccount(paired_brokerB, paired_account_numberB);
-            document.getElementById('pairing-accounts-paired-tbody').insertAdjacentHTML('beforeend', tablePairdAccountRowHTML(accountA, accountB));
+            document.getElementById('pairing_accounts_paired_tbody').insertAdjacentHTML('beforeend', tablePairdAccountRowHTML(accountA, accountB));
         }
 
     }
@@ -1360,18 +2263,18 @@ function populatePairedAccountTable() {
                 continue;
             }
 
-            var cellAcountA = row.cells[1].firstElementChild;//second cell
-            var cellAcountB = row.cells[2].firstElementChild;//third cell
+            var cellAccountA = row.cells[1].firstElementChild;//second cell
+            var cellAccountB = row.cells[2].firstElementChild;//third cell
 
-            if (!cellAcountA.dataset || !cellAcountB.dataset) {
+            if (!cellAccountA.dataset || !cellAccountB.dataset) {
                 continue;
             }
 
-            var brokerA = cellAcountA.dataset.broker;
-            var account_numberA = cellAcountA.dataset.accountNumber;
+            var brokerA = cellAccountA.dataset.broker;
+            var account_numberA = cellAccountA.dataset.accountNumber;
 
-            var brokerB = cellAcountB.dataset.broker;
-            var account_numberB = cellAcountB.dataset.accountNumber;
+            var brokerB = cellAccountB.dataset.broker;
+            var account_numberB = cellAccountB.dataset.accountNumber;
 
             if ((brokerA == unpaired_broker
                 && account_numberA == unpaired_account_number)
@@ -1453,7 +2356,7 @@ function tablePairdAccountRowHTML(accountA, accountB) {
 
 function getSelectedPairingsToRemove() {
 
-    var table = document.getElementById("pairing-accounts-paired-table")
+    var table = document.getElementById("pairing_accounts_paired_table")
     var rows = table.rows;
 
     var pairs = [];
@@ -1471,18 +2374,18 @@ function getSelectedPairingsToRemove() {
             continue;
         }
 
-        var cellAcountA = row.cells[1].firstElementChild;//second cell
-        var cellAcountB = row.cells[2].firstElementChild;//third cell
+        var cellAccountA = row.cells[1].firstElementChild;//second cell
+        var cellAccountB = row.cells[2].firstElementChild;//third cell
 
-        if (!cellAcountA.dataset || !cellAcountB.dataset) {
+        if (!cellAccountA.dataset || !cellAccountB.dataset) {
             continue;
         }
 
-        var brokerA = cellAcountA.dataset.broker;
-        var account_numberA = cellAcountA.dataset.accountNumber;
+        var brokerA = cellAccountA.dataset.broker;
+        var account_numberA = cellAccountA.dataset.accountNumber;
 
-        var brokerB = cellAcountB.dataset.broker;
-        var account_numberB = cellAcountB.dataset.accountNumber;
+        var brokerB = cellAccountB.dataset.broker;
+        var account_numberB = cellAccountB.dataset.accountNumber;
 
         var accountA = getAccount(brokerA, account_numberA);
         var accountB = getAccount(brokerB, account_numberB);
@@ -1519,13 +2422,13 @@ function addLog(str_log, type) {
     };
 
     logs.push(logObj);
-    if (logs.length > MaxLogRecords) {
+    if (logs.length > AppConfig.maximum_log_records) {
         logs.shift();//remove the first element
     }
 
-    document.getElementById('output-count').innerHTML = logs.length;
+    document.getElementById('output_count').innerHTML = logs.length;
     
-    if ($('#btn-output').hasClass('active')) {
+    if ($('#btn_output').hasClass('active')) {
         displayLog();
     }
     
@@ -1577,7 +2480,7 @@ function displayLog() {
         </table>`;
 
     if (html) {
-        document.getElementById('center-content-output').innerHTML = html;
+        document.getElementById('center_content_output').innerHTML = html;
     }
 
 }
@@ -1647,14 +2550,14 @@ function showNextPaired() {
     cursorNext();
     refreshPairedTable();
 
-    alert(cursorIndex);//TESTING!!!
+    //alertBox("Alert",cursorIndex+"");//TESTING!!!
 }
 
 function showPreviousPaired() {
     cursorPrev();
     refreshPairedTable();
 
-    alert(cursorIndex);//TESTING!!!
+    //alertBox("Alert", cursorIndex + "");//TESTING!!!
 }
 
 function RefreshSync() {
@@ -1665,14 +2568,14 @@ function refreshPairedTable() {
     pair = currentPair();
     var html = pairedAccountHTML(pair);
     if (html) {
-        document.getElementById('center-content-main').innerHTML = html;
+        document.getElementById('center_content_main').innerHTML = html;
     }
 }
 
 function refreshActionList() {
     var html = accountListHTML();
     if (html) {
-        document.getElementById('right-pane').innerHTML = html;
+        document.getElementById('right_pane').innerHTML = html;
 
 
         $('.account-list-item-popup-menu')
@@ -1737,20 +2640,15 @@ function setAccount(account) {
         paired_accounts[account.pair_id][account.column_index] = account;
         paired_accounts[account.pair_id][account.peer.column_index] = account.peer;
 
-        console.log('setAccount 1');
-
     } else {
-
-        console.log('setAccount 2');
 
         addUnpaired(account);
     }
 
-    console.log('UNPAIED COUNT ', unpaired_accounts.length);
     if (paired_accounts[account.pair_id]) {
-        console.log(`PAIED COUNT ${account.pair_id}`, paired_accounts[account.pair_id].length);
+        
     }
-        console.log(`PAIED COUNT `, Object.keys(paired_accounts).length);
+        
 
     return true;
 }
@@ -1774,14 +2672,8 @@ function addUnpaired(account) {
     }
     const objIndex = unpaired_accounts.findIndex(obj => obj.broker === account.broker && obj.account_number === account.account_number);
     if (objIndex == -1) {
-
-        console.log('addUnpaired 1');
-
         unpaired_accounts.push(account);
     } else {
-
-        console.log('addUnpaired 2');
-
         unpaired_accounts[objIndex] = account;
     }
 }
@@ -1802,7 +2694,7 @@ function removeAccount(account) {
 }
 
 function pairedAccountHTML(pair) {
-
+    
     if (!pair) {
         return;
     }
@@ -1872,7 +2764,18 @@ function pairedAccountHTML(pair) {
                         <th>
                             ${marketOpenOrClosedText(accountB)}
                         </th>
-                    </tr>   
+                    </tr>  
+
+                  <tr>
+                    <th colspan="2">HEDGE PROFIT</th>
+                    <th class="green">${accountA.hedge_profit.toFixed(2)} ${accountA.account_currency} </th>
+                    <th class="green">${accountB.hedge_profit.toFixed(2)} ${accountA.account_currency}</th>
+                  </tr>
+                  <tr>
+                    <th colspan="2">HEDGE PROFIT TOMORROW</th>
+                    <th>${accountA.hedge_profit_tomorrow.toFixed(2)} ${accountA.account_currency}</th>
+                    <th>${accountB.hedge_profit_tomorrow.toFixed(2)} ${accountA.account_currency}</th>
+                  </tr>
                     </thead>
                     <tbody id="${tableContentID(accountA)}">
                     ${tableContent(pair)}
@@ -2046,7 +2949,7 @@ function getProcessIndication(order_a, order_b, column_index) {
 
     if (order_b.is_sync_copying && column_index == 0) {
 
-        console.log(ReceivingCopyHtml);
+        //console.log(ReceivingCopyHtml);
 
         return ReceivingCopyHtml;
     }
@@ -2181,7 +3084,7 @@ function accountListHTML() {
 
 function labelAccountStatus(account, status) {
 
-    var parentNode = document.getElementById('right-pane');
+    var parentNode = document.getElementById('right_pane');
     var elementList = parentNode.querySelectorAll('.account-list-item');
     for (i = 0; i < elementList.length; i++) {
         var element = elementList[i];
@@ -2235,19 +3138,20 @@ function accountItemHTML(account) {
 }
 
 function tableContentID(account) {
-    return `table-${getPairID(account)}`;
+    return `table_${getPairID(account)}`;
 }
 
 function tableColumnAID(account) {
-    return `table-col-a-${getPairID(account)}`;
+    return `table_col_a_${getPairID(account)}`;
 }
 
 function tableColumnBID(account) {
-    return `table-col-b-${getPairID(account)}`;
+    return `table_col_b_${getPairID(account)}`;
 }
 
 function getPairID(account) {
-    var id = account.broker + "-" + account.account_number;
-    var id = id.replace(new RegExp(' ', 'g'), '-');
+    var id = account.broker + "_" + account.account_number;
+    var id = id.replace(new RegExp(' ', 'g'), '_');
     return id;
 }
+

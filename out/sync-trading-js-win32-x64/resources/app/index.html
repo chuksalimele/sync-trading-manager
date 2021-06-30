@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <!--<title>Sync Trading Manager</title>-->
     <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';" />
+    <link rel="stylesheet" type="text/css" href="alertify/alertify.min.css">
     <link rel="stylesheet" type="text/css" href="semantic/semantic.min.css">
     <link rel="stylesheet" type="text/css" href="css/font-awesome.min.css">
-    
+
     <!-- the following line is added below to avoid $ or jQuery is Undefied Error-  since we enable Node Integration which use CommonJS
         to import module-->
     <script>
@@ -17,6 +18,7 @@
     </script>
     <script src="jquery/jquery.min.js"></script>
     <script src="semantic/semantic.min.js"></script>
+    <script src="alertify/alertify.min.js"></script>
     <script src="index.js"></script>
 </head>
 <body style="padding: 20px; height: 100%;">
@@ -34,23 +36,24 @@
         <div class="three wide column">
 
             <div class="ui vertical menu">
-                <a class="teal item" id="btn-main">
+                <a class="teal item" id="btn_main">
                     Main
                 </a>
-                <a class="active teal item" id="btn-pairing">
+                <a class="teal item" id="btn_place_order_triggers">
+                    Triggers
+                    <div class="ui label" id="trigger_count">0</div>
+                </a>
+                <a class="active teal item" id="btn_pairing">
                     Pairing
                 </a>
-                <a class="teal item" id="btn-output">
+                <a class="teal item" id="btn_output">
                     Output
-                    <div class="ui label" id="output-count"></div>
+                    <div class="ui label" id="output_count">0</div>
                 </a>
-                <a class="teal item" id="btn-metrics">
+                <a class="teal item" id="btn_metrics">
                     Metrics
                 </a>
-                <a class="teal item" id="btn-symbols-configuration">
-                    Symbols Configuration
-                </a>               
-                <a class="teal item" id="btn-settings">
+                <a class="teal item" id="btn_settings">
                     Settings
                 </a>
             </div>
@@ -61,7 +64,7 @@
         <div class="nine wide column" style="width: auto; height: 100%; overflow: auto;">
 
             <!--MAIN PANE-->
-            <div id="center-content-main" style="width: auto; height: 100%; display: none; ">
+            <div id="center_content_main" style="width: auto; height: 100%; display: none; ">
                 <!--placeholder-->
                 <div class="ui placeholder" style="width: 100%;">
                     <table class="ui compact celled definition structured table" style="width: 100%;">
@@ -150,7 +153,7 @@
 
 
             <!--PAIRING PANE-->
-            <div id="center-content-pairing" style="width: auto; height: 100%;">
+            <div id="center_content_pairing" style="width: auto; height: 100%;">
 
                 <div class="ui grid">
                     <div class="two column row" style="display: flex; justify-content: center;">
@@ -161,60 +164,64 @@
                     </div>
                     <div class="two column row" style="display: flex; justify-content: center;">
                         <div class="column" style="display: flex; justify-content: center;">
-                            <i id="pairing-number-info" style="font-size: 18px;"><!--indicate number of unpaired or paired--></i>
+                            <i id="pairing_number_info" style="font-size: 18px;"><!--indicate number of unpaired or paired--></i>
                         </div>
 
                     </div>
                     <div class="column row centered">
                         <div>
 
-                            <span style="margin-right:5px;">
-                                <i>Pair</i>
-                                <div id="pairing-accounts-dropdown-a" class="ui inline dropdown" style="200px;">
-                                    <div class="default text">Select One Account</div>
-                                    <i class="dropdown icon"></i>
-                                    <div class="menu" id="pairing-accounts-list-a">
+                            <i>Pair</i>
 
-                                    </div>
-                                </div>
+                            <span style="margin-right:5px;">
+
+                                <span id="pairing_accounts_dropdown_a" class="ui inline dropdown" style="width: 200px; text-align:center;">
+                                    <span class="default text">Select One Account</span>
+                                    <i class="dropdown icon"></i>
+                                    <span class="menu" id="pairing_accounts_list_a">
+
+                                    </span>
+                                </span>
                             </span>
 
-                            <span>
-                                <i>together with</i>
-                                <div id="pairing-accounts-dropdown-b" class="ui inline dropdown" style="200px;">
-                                    <div class="default text">Select Another Account</div>
-                                    <i class="dropdown icon"></i>
-                                    <div class="menu" id="pairing-accounts-list-b">
+                            <i>together with</i>
 
-                                    </div>
-                                </div>
+                            <span>
+
+                                <span id="pairing_accounts_dropdown_b" class="ui inline dropdown" style="width: 200px;  text-align:center;">
+                                    <span class="default text">Select Another Account</span>
+                                    <i class="dropdown icon"></i>
+                                    <span class="menu" id="pairing_accounts_list_b">
+
+                                    </span>
+                                </span>
                             </span>
 
                         </div>
                     </div>
                     <div class="two column row" style="display: flex; justify-content: center;">
                         <div class="column" style="display: flex; justify-content: center;">
-                            <button class="ui primary button" id="pairing-account-btn">
+                            <button class="ui primary button" id="pairing_account_btn">
                                 Pair Both Accounts Together
                             </button>
                         </div>
                     </div>
                     <div class="row">
                         <div class="sixteen wide column">
-                            <table class="ui celled table" id="pairing-accounts-paired-table">
+                            <table class="ui celled table" id="pairing_accounts_paired_table">
                                 <thead>
                                     <tr>
                                         <th colspan="4">List of Paired Accounts</th>
                                     </tr>
                                 </thead>
-                                <tbody id="pairing-accounts-paired-tbody">
+                                <tbody id="pairing_accounts_paired_tbody">
                                     <!--four colums - first is checkbox, second and third is accountA and B respectively fouth is button for Goto-->
                                 </tbody>
                                 <tfoot>
                                     <tr>
                                         <th colspan="3"></th>
                                         <th class="collapsing">
-                                            <button class="ui labeled icon button" id="pairing-account-remove-pairing-btn">
+                                            <button class="ui labeled icon button" id="pairing_account_remove_pairing_btn">
                                                 <i class="close icon"></i>
                                                 Remove pairing
                                             </button>
@@ -229,59 +236,306 @@
             </div>
 
             <!--OUTPUT PANE-->
-            <div id="center-content-output" style="width: auto; height: 100%; display: none;">
+            <div id="center_content_output" style="width: auto; height: 100%; display: none;">
 
                 This is output
 
             </div>
 
             <!--METRICS PANE-->
-            <div id="center-content-metrics" style="width: auto; height: 100%; display: none;">
+            <div id="center_content_metrics" style="width: auto; height: 100%; display: none;">
 
                 This is metrics
 
             </div>
 
-            <!--SYMBOL MAPPING PANE-->
-            <div id="center-content-symbols-configuration" style="width: auto; height: 100%; display: none;">
+            <!--PLACE ORDER TRIGGERS PANE-->
+            <div id="center_content_place_order_triggers" style="width: auto; height: 100%; display: none;">
 
-                
+                This is place order triggers
 
             </div>
 
             <!--SETTINGS PANE-->
-            <div id="center-content-settings" style="width: auto; height: 100%; display: none;">
+            <div id="center_content_settings" style="width: auto; height: 100%; display: none;">
 
-                <form class="ui form">
+                <div class="ui pointing attached secondary menu">
+                    <a class="active item" data-tab="general">General</a>
+                    <a class="item" data-tab="symbols-configuration">Symbols Configuration</a>
+                    <a class="item" data-tab="notification-configuraton">Notification Configuration</a>
+                </div>
 
-                    <div class="field">
-                        <div class="ui checkbox">
-                            <input id="settings-only-pair-live-accounts-with-same-account-name" type="checkbox" tabindex="0" class="hidden">
-                            <label style="width: 300px;">Only pair live accounts with same account name for safety reason</label>
+                <div class="ui bottom attached active tab segment" data-tab="general">
+                    <form class="ui form">
+
+                        <div class="field">
+                            <div class="ui checkbox">
+                                <input id="only_pair_live_accounts_with_same_account_name" type="checkbox" tabindex="0">
+                                <label style="width: 300px;">Only pair live accounts with same account name for safety reason</label>
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="inline fields">
-                        <div class="sixteen wide field">
-                            <label style="width: 300px;">Sync check interval in seconds</label>
-                            <input id="settings-sync-check-interval-in-seconds" type="number" max="30" min="5" style="width: 80px;">
+
+                        <div class="inline fields">
+                            <div class="ui checkbox">
+                                <input id="show_waning_message_if_loss_is_possible" type="checkbox" tabindex="0">
+                                <label style="width: 300px;">Show waning message if loss is possible</label>
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="inline fields">
-                        <div class="sixteen wide field">
-                            <label style="width: 300px;">Maximum log records</label>
-                            <input id="settings-maximum-log-records" type="number" max="1000" min="50" style="width: 80px;">
+
+                        <div class="inline fields">
+                            <div class="sixteen wide field">
+                                <label style="width: 300px;">Automatically avoid loss due to tomorrow swap by closing trades </label>
+                                <select id="automatically_avoid_loss_due_to_tomorrow_swap_by_closing_trades_before_swap_time" class="ui fluid selection dropdown" style="width: 100px; padding: 4px !important;">
+                                    <option value="0"></option>
+                                    <option value="900">15 mins</option>
+                                    <option value="1800">30 mins</option>
+                                    <option value="3600">1 hour</option>
+                                    <option value="7200">2 hours</option>
+                                    <option value="10800">3 hours</option>
+                                </select>
+                                <i style="font-size: small; max-width: 100px; margin-left: 5px;">before swap time</i>
+                            </div>
                         </div>
+
+
+
+                        <div class="inline fields">
+                            <div class="sixteen wide field">
+                                <label style="width: 300px;">Sync check interval in seconds</label>
+                                <input id="sync_check_interval_in_seconds" type="number" max="30" min="5" style="width: 100px; padding: 4px !important;">
+                            </div>
+                        </div>
+
+                        <div class="inline fields">
+                            <div class="sixteen wide field">
+                                <label style="width: 300px;">Maximum log records</label>
+                                <input id="maximum_log_records" type="number" max="1000" min="50" style="width: 100px; padding: 4px !important;">
+                            </div>
+                        </div>
+
+                        <div class="inline fields">
+                            <div class="sixteen wide field">
+                                <label style="width: 300px;">Refresh account info_interval in seconds</label>
+                                <input id="refresh_account_info_interval_in_seconds" type="number" max="60" min="5" style="width: 100px; padding: 4px !important;">
+                            </div>
+                        </div>
+
+
+                        <div class="ui success message" id="settings_feedback">
+                            <div class="header" id="settings_message_title">Title</div>
+                            <p id="settings_message_body">This message body</p>
+                        </div>
+
+                        <button class="ui primary button" type="button" onclick="SaveSettings()">Save</button>
+                    </form>
+
+                </div>
+
+                <div class="ui bottom attached tab segment" data-tab="symbols-configuration" id="center_content_symbols_configuration">
+
+                    <!--SYMBOL MAPPING PANE-->
+                    <div id="center_content_symbols_configuration" style="width: auto; height: 100%;">
+
+
+
                     </div>
 
-                    <div class="ui success message" id="settings-feedback">
-                        <div class="header" id="settings-message-title">Title</div>
-                        <p id="settings-message-body">This message body</p>
-                    </div>
+                </div>
 
-                    <button class="ui primary button" type="button" onclick="SaveSettings()">Save</button>
-                </form>
+
+                <div class="ui bottom attached tab segment" data-tab="notification-configuraton">
+
+                    <form class="ui form">
+
+                        <div class="field">
+                            <div class="ui checkbox">
+                                <input id="send_notification_at_margin_call" type="checkbox" tabindex="0">
+                                <label style="width: 300px;">Send notification at margin call</label>
+                            </div>
+                        </div>
+
+                        <div class="inline fields">
+                            <div class="sixteen wide field">
+                                <div class="ui checkbox" style="width: 300px;">
+                                    <input id="send_notification_at_percentage_close_to_stopout" type="checkbox" tabindex="0">
+                                    <label>Send notification at percentage close to stopout</label>
+                                </div>
+                                <input id="send_notification_at_percentage_close_to_stopout_input" type="number" max="100" min="0" style="width: 120px; padding: 4px !important;">
+                            </div>
+                        </div>
+
+                        <div class="inline fields">
+                            <div class="sixteen wide field">
+                                <label style="width: 300px;">Send notification of session information every interval of </label>
+                                <select id="send_notification_session_information_every_interval_in_seconds" class="ui fluid selection dropdown" style="width: 120px; padding: 4px !important;">
+                                    <!--values are in milliseconds--->
+                                    <option value="0"></option>
+                                    <option value="900000">15 mins</option>
+                                    <option value="1800000">30 mins</option>
+                                    <option value="3600000">1 hour</option>
+                                    <option value="7200000">2 hours</option>
+                                    <option value="10800000">3 hours</option>
+                                    <option value="14400000">4 hours</option>
+                                    <option value="21600000">6 hours</option>
+                                    <option value="28800000">8 hours</option>
+                                    <option value="43200000">12 hours</option>
+                                </select>
+                            </div>
+                        </div>
+
+
+
+                        <div class="field">
+                            <div class="ui checkbox">
+                                <input id="send_notification_session_information_only_when_market_is_open" type="checkbox" tabindex="0">
+                                <label style="width: 300px;">Send notification of session information only when market is open</label>
+                            </div>
+                        </div>
+
+                        <div class="inline fields">
+                            <div class="sixteen wide field">
+                                <label style="width: 300px;">Sender Email Address</label>
+                                <input id="notification_sender_email_address" type="text" style="width: 200px; padding: 4px !important;">
+                                <i style="font-size: small; max-width: 100px; margin-left: 5px;">defaults to Auth Username</i>
+                            </div>
+                        </div>
+
+                        <div class="inline fields">
+                            <div class="sixteen wide field">
+                                <label style="width: 300px;">Recipient Email Address</label>
+                                <input id="notification_recipient_email_address" type="text" style="width: 200px; padding: 4px !important;">
+                            </div>
+                        </div>
+
+                        <h3 class="ui top attached header">
+                            SMTP Settings
+                        </h3>
+                        <div class="ui attached segment">
+
+                            <div class="field">
+                                <div class="ui checkbox">
+                                    <input id="notification_pool_connection" type="checkbox" tabindex="0">
+                                    <label style="width: 300px;">Pooled connection</label>
+                                </div>
+                            </div>
+
+                            <div class="field">
+                                <div class="ui checkbox">
+                                    <input id="notification_secure_connection" type="checkbox" tabindex="0">
+                                    <label style="width: 300px;">Secure connection</label>
+                                </div>
+                            </div>
+
+                            <div class="field">
+                                <div class="ui checkbox">
+                                    <input id="notification_fail_on_invalid_certs" type="checkbox" tabindex="0">
+                                    <label style="width: 300px;">Fail on invalid certs</label>
+                                </div>
+                            </div>
+
+                            <div class="inline fields">
+                                <div class="sixteen wide field">
+                                    <label style="width: 200px;">SMTP Host</label>
+                                    <input id="notification_smtp_host" type="text" style="width: 300px; padding: 4px !important;">
+                                </div>
+                            </div>
+
+                            <div class="inline fields">
+                                <div class="sixteen wide field">
+                                    <label style="width: 200px;">SMTP port</label>
+                                    <input id="notification_smtp_port" type="number" min="0" style="width: 300px; padding: 4px !important;">
+                                </div>
+                            </div>
+
+                            <div class="inline fields">
+                                <div class="sixteen wide field">
+                                    <label style="width: 200px;">Auth Type</label>
+                                    <select id="notification_auth_type" class="ui fluid selection dropdown" style="width: 300px; padding: 4px !important;" onchange="onSelectAuthType(this)">
+                                        <option value=""></option>
+                                        <option value="OAuth2">OAuth2</option>
+                                        <option value="Login">Login</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="inline fields">
+                                <div class="sixteen wide field">
+                                    <label style="width: 200px;">Username</label>
+                                    <input id="notification_username" type="text" style="width: 300px; padding: 4px !important;">
+                                </div>
+                            </div>
+
+                            <div class="inline fields">
+                                <div class="sixteen wide field">
+                                    <label style="width: 200px;">Password</label>
+                                    <input id="notification_password" type="password" style="width: 300px; padding: 4px !important;">
+                                </div>
+                            </div>
+
+                            <div class="inline fields">
+                                <div class="sixteen wide field">
+                                    <label style="width: 200px;">Client ID</label>
+                                    <input id="notification_client_id" type="text" style="width: 300px; padding: 4px !important;">
+                                </div>
+                            </div>
+
+                            <div class="inline fields">
+                                <div class="sixteen wide field">
+                                    <label style="width: 200px;">Client Secret</label>
+                                    <input id="notification_client_secret" type="password" style="width: 300px; padding: 4px !important;">
+                                </div>
+                            </div>
+
+                            <div class="inline fields">
+                                <div class="sixteen wide field">
+                                    <label style="width: 200px;">Access Token</label>
+                                    <input id="notification_access_token" type="text" style="width: 300px; padding: 4px !important;">
+                                </div>
+                            </div>
+
+                            <div class="inline fields">
+                                <div class="sixteen wide field">
+                                    <label style="width: 200px;">Refresh Token</label>
+                                    <input id="notification_refresh_token" type="text" style="width: 300px; padding: 4px !important;"><i>&nbsp;&nbsp; optional</i>
+                                </div>
+                            </div>
+
+                            <div class="inline fields">
+                                <div class="sixteen wide field">
+                                    <label style="width: 200px;">Expiration Time</label>
+                                    <input id="notification_expiration_time" type="number" min="0" style="width: 300px; padding: 4px !important;"><i>&nbsp;&nbsp; optional</i>
+                                </div>
+                            </div>
+
+                            <div class="inline fields">
+                                <div class="sixteen wide field">
+                                    <label style="width: 200px;">Access Url</label>
+                                    <input id="notification_access_url" type="text" style="width: 300px; padding: 4px !important;"><i>&nbsp;&nbsp; optional</i>
+                                </div>
+                            </div>
+
+                            <div class="ui success message" id="notification_feedback">
+                                <div class="header" id="notification_message_title">Title</div>
+                                <p id="notification_message_body">This message body</p>
+                            </div>
+
+                            <div class="inline fields">
+                                <div class="sixteen wide field">
+                                    <button class="ui primary button" type="button" onclick="SaveNotificationSettings()">Save</button>&nbsp;&nbsp;
+                                    <button class="ui secondary button" type="button" onclick="VerifyNoticationConnection()">Verify Connection</button>
+                                </div>
+                            </div>
+
+                        </div>
+
+
+                    </form>
+
+
+                </div>
+
 
             </div>
 
@@ -289,7 +543,7 @@
 
 
         <!-- Right Side-->
-        <div class="four wide column" id="right-pane">
+        <div class="four wide column" id="right_pane">
 
             <!--placeholder-->
             <div class="ui fluid placeholder">
@@ -304,7 +558,7 @@
 
     </div>
 
-    <div id="place-order-dialog" class="ui modal">
+    <div id="place_order_dialog" class="ui modal">
         <i class="close icon"></i>
         <div class="header">
             Place Order
@@ -312,35 +566,81 @@
         <div class="content">
             <form class="ui form">
 
-                <h4  id="place-order-dialog-subheading" class="ui dividing header"></h4>
+                <h4 id="place_order_dialog_subheading" class="ui dividing header"></h4>
                 <div class="field">
                     <label>Select the account for BUY side</label>
-                    <div id="place-order-dialog-accounts" class="ui fluid  selection dropdown">                        
+                    <div id="place_order_dialog_accounts" class="ui fluid  selection dropdown">
                         <i class="dropdown icon"></i>
                         <div class="default text"></div>
                         <div class="menu">
-                            <div id="place-order-dialog-acount-a-content" class="item" data-broker="" data-account-number  ="">
-                                <img  id="place-order-dialog-acount-a-image" class="ui mini avatar image" src="">
-                                <span id="place-order-dialog-acount-a-label"></span>
+                            <div id="place_order_dialog_account_a_content" class="item" data-broker="" data-account-number="">
+                                <img id="place_order_dialog_account_a_image" class="ui mini avatar image" src="">
+                                <span id="place_order_dialog_account_a_label"></span>
                             </div>
-                            <div id="place-order-dialog-acount-b-content"  class="item" data-broker="" data-account-number="">
-                                <img id="place-order-dialog-acount-b-image" class="ui mini avatar image" src="">
-                                <span  id="place-order-dialog-acount-b-label"></span>
+                            <div id="place_order_dialog_account_b_content" class="item" data-broker="" data-account-number="">
+                                <img id="place_order_dialog_account_b_image" class="ui mini avatar image" src="">
+                                <span id="place_order_dialog_account_b_label"></span>
                             </div>
                         </div>
                     </div>
                 </div>
+
                 <div class="two fields">
-                    <div class="field">
-                        <label>Symbol</label>
-                        <select id="place-order-dialog-symbols" class="ui fluid selection dropdown">
-                            <option value="">Select</option>
-                            <option value="XAUUSD">XAUUSD</option>
+                    <div class="field wide twelve">
+                        <label>Trigger</label>
+                        <select id="place_order_dialog_trigger" class="ui fluid selection dropdown" style="padding-top: 0px !important; padding-bottom: 0px !important;" onchange="OnTriggerSelected(this)">
+                            <option value="Instant now">Instant now</option>
+                            <option value="Instant when both accounts have credit bonuses">Instant when both accounts have credit bonuses</option>
+                            <option value="Pending at price">Pending at price</option>
+                            <option value="Pending at price when both accounts have credit bonuses">Pending at price when both accounts have credit bonuses</option>
                         </select>
                     </div>
+                    <div class="field wide four">
+                        <label>Price</label>
+                        <input id="place_order_dialog_trigger_price" type="number" disabled step=".01">
+                    </div>
+                </div>
+                
+                <div class="field">
+                    <label>Maximum allowable percentage difference in account balance of both accounts</label>
+                    <select id="place_order_dialog_percentage_difference_in_account_balances" class="ui fluid selection dropdown" style="padding-top: 0px !important; padding-bottom: 0px !important;">
+                        <option value="">(No restriction)</option>
+                        <option value="0.1">0.1</option>
+                        <option value="0.5" selected>0.5</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="4">4</option>
+                        <option value="6">6</option>
+                        <option value="8">8</option>
+                        <option value="10">10</option>
+                        <option value="15">15</option>
+                        <option value="20">20</option>
+
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>Symbol</label>
+                    <select id="place_order_dialog_symbols" class="ui fluid selection dropdown" onchange="onSelectPlaceOrderSymbol(this)">
+                        <option value="">Select</option>
+                        <option value="XAUUSD">XAUUSD</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <div id="place_order_dialog_use_auto_computed_lot_size_checkbox" class="ui checkbox" style="width: 300px;">
+                        <input id="place_order_dialog_use_auto_computed_lot_size" type="checkbox" checked tabindex="0">
+                        <label>Use auto computed lot size</label>
+                    </div>
+                </div>
+
+                <div class="two fields">
                     <div class="field">
-                        <label>Lot size</label>
-                        <input id="place-order-dialog-lot-size" type="number" min="0">
+                        <label>Lot size for <i id="place_order_dialog_label_lot_size_for_account_a"></i></label>
+                        <input id="place_order_dialog_lot_size_for_account_a" disabled type="number" min="0" data-broker="" data-account-number="">
+                    </div>
+                    <div class="field">
+                        <label>Lot size for  <i id="place_order_dialog_label_lot_size_for_account_b"></i></label>
+                        <input id="place_order_dialog_lot_size_for_account_b" disabled type="number" min="0" data-broker="" data-account-number="">
                     </div>
                 </div>
             </form>
@@ -352,7 +652,6 @@
     </div>
 
     <script>
-
 
 
     </script>

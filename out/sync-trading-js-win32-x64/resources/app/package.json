@@ -27,7 +27,8 @@
   "dependencies": {
     "electron-squirrel-startup": "^1.0.0",
     "exe-icon-extractor": "^1.0.8",
-    "mkdirp": "^1.0.4"
+    "mkdirp": "^1.0.4",
+    "nodemailer": "^6.5.0"
   },
   "config": {
     "forge": {

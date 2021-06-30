@@ -13,9 +13,9 @@ export class SyncUtil {
     private static CountSeq: number = 0;
     public static AppConfigMap: Map<string, any> = new Map<string, any>();
 
-    static WaitAsyncUntil(fun: (...args: any[]) => void, condition: Function) {
+    static WaitAsyncUntil(fun: Function, condition: Function) {
         if (!condition()) {
-            setImmediate(this.WaitAsyncUntil, fun, condition);
+            setImmediate(this.WaitAsyncUntil.bind(this), fun, condition);
         } else {
             fun();
         }

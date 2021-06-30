@@ -12,6 +12,7 @@ export class Order {
     public open_time: number = 0;
     public stoploss: number = 0;
     public target: number = 0;
+    public close_price: number = 0;
     public close_time: number = 0;
     public lot_size: number = 0;
     private default_spread: number = 0;
@@ -27,8 +28,10 @@ export class Order {
     public close_execution_time: number = 0;
     public modify_target_execution_time: number = 0;
     public modify_stoploss_execution_time: number = 0;
+    public force: boolean = false;//force close or a forced operation
+    public reason: string = '';// reason for the last forced operation
     private is_sync_copying: boolean = false;
-    private is_sync_closing: boolean = false;
+    private is_closing: boolean = false;
     private is_sync_modifying_target: boolean = false;
     private is_sync_modifying_stoploss: boolean = false;
     private is_copyable: boolean = true;
@@ -43,7 +46,11 @@ export class Order {
 
     public SyncCopying(copying: boolean) { return this.is_sync_copying = copying };
 
-    public SyncClosing(closing: boolean) { return this.is_sync_closing = closing };
+    /**
+     * Sync or own closing
+     * @param closing
+     */
+    public Closing(closing: boolean) { return this.is_closing = closing };
 
     public SyncModifyingTarget(modifying_target: boolean) { return this.is_sync_modifying_target = modifying_target };   
 
@@ -51,7 +58,10 @@ export class Order {
 
     public IsSyncCopying(): boolean { return this.is_sync_copying };
 
-    public IsSyncClosing(): boolean { return this.is_sync_closing };
+    /**
+     * Sync or own closing
+     */
+    public IsClosing(): boolean { return this.is_closing };
 
     public IsSyncModifyingTarget(): boolean { return this.is_sync_modifying_target };
 

@@ -6,21 +6,37 @@ import { TraderAccount } from "./TraderAccount";
 import { Order } from "./Order";
 import { SyncTraderException } from "./SyncTraderException";
 import { SyncUtil } from "./SyncUtil";
-import { PairAccount, PairOrder, PairTicket, StringBoolNull } from "./Types"
+import { AccountOrderPlacement, PairAccount, PairOrder, PairTicket, StringBoolNull } from "./Types"
 import { MessageBuffer } from "./MessageBuffer";
 import { Config } from "./Config";
 import { Constants } from "./Constants";
 import { OrderPlacement } from "./OrderPlacement";
+import { Emailer } from "./Emailer";
+import { PlaceOrderTrigger } from "./PlaceOrderTrigger";
 
 export class SyncService {
 
     private pairedAccounts: Array<PairAccount> = new Array();
     private unpairedAccounts: Array<TraderAccount> = new Array();
     private readonly PING_INTERVAL: number = 1000;
+    private RoutineSyncChecksIntervalID;
+    private RoutineRefreshAccountInfoIntervalID;
+
+    private LastRoutineSyncChecksInterval: number = 0;
+    private LastRoutineRefreshAccountInfoInterval: number = 0;
+    private PlaceOrdersTriggerList: Array<PlaceOrderTrigger> = new Array<PlaceOrderTrigger>();
 
     //ROUTINE SYNC CHECKS INTERVAL
     private RoutineSyncChecksInterval: Function = function (): number {
-        return SyncUtil.AppConfigMap.get('sync_check_interval_in_seconds') || 10
+        var default_val = 10;
+        var val = SyncUtil.AppConfigMap.get('sync_check_interval_in_seconds') - 0 || default_val;
+        return (val <= 0 ? default_val : val) * 1000;
+    };
+
+    private RoutineRefreshAccountInfoInterval: Function = function (): number {
+        var default_val = 10;
+        var val = SyncUtil.AppConfigMap.get('refresh_account_info_interval_in_seconds') - 0 || default_val;
+        return (val <= 0 ? default_val : val) * 1000;
     };
 
 
@@ -33,12 +49,15 @@ export class SyncService {
 
     syncOpenTickectPairs: Map<string, PairTicket[]> = new Map<string, PairTicket[]>();
     syncClosedTickectPairs: Map<string, PairTicket[]> = new Map<string, PairTicket[]>();
+    pendingAccountPlacementOrderMap: Map<string, AccountOrderPlacement[]> = new Map<string, AccountOrderPlacement[]>();
+
+    private emailer: Emailer = new Emailer();
 
     public Start() {
-        
+
         try {
 
-            SyncUtil.LoadAappConfig();           
+            SyncUtil.LoadAappConfig();
 
             //first load the sync state of the trades
             var file = Config.SYNC_LOG_FILE;
@@ -46,7 +65,7 @@ export class SyncService {
             if (!fs.existsSync(dirname)) {
                 mkdirp.sync(dirname);
             }
-            
+
             var fd = null;
             if (fs.existsSync(file)) {//file exists
 
@@ -78,7 +97,7 @@ export class SyncService {
                 fs.readSync(fd, buffer, 0, length, readPos);
 
                 var data = buffer.toString(); //toString(0, length) did not work but toString() worked for me
-                
+
                 this.syncOpenTickectPairs = new Map(JSON.parse(data));
             }
 
@@ -86,35 +105,179 @@ export class SyncService {
             console.log(e);
             throw e;
         }
-        
+
 
         //set timer for ping
         setInterval(this.OnTimedPingEvent.bind(this), this.PING_INTERVAL);
 
-        //ste timer for routine validation checks        
-        setInterval(this.RevalidateSyncAll.bind(this), this.RoutineSyncChecksInterval());
+
+        this.CheckRoutineSyncChecksInterval();
+        this.CheckRoutineRefreshAccountInfoInterval();
+
+
 
         //run the service handler
         setImmediate(this.Handler.bind(this));
+
     }
 
-    public SyncPlaceOrders(traderAccount: TraderAccount, symbol: string, lot_size: number) {
-        if (!traderAccount.Peer()) {
+    private CheckPlaceOrderTriggerPermission(trigger: PlaceOrderTrigger) {
+
+
+        //Ensure no open position otherwise reject this add operation.
+        //Since the strategy is mainly maintaining one open trade per account
+
+        if (!trigger.buy_trader.Peer()) {
+            ipcSend('place-order-trigger-rejected', `Peer for [${trigger.buy_trader.Broker(), trigger.buy_trader.AccountNumber()}] is null`);
             return;
         }
-        var paired_uuid = SyncUtil.Unique();
-        var placementA: OrderPlacement = new OrderPlacement(paired_uuid, symbol, Constants.BUY, lot_size);
 
-        var placementB: OrderPlacement = new OrderPlacement(paired_uuid, symbol, Constants.SELL, lot_size);
+        if (trigger.buy_trader.OpenOrdersCount() > 0) {
+            ipcSend('place-order-trigger-rejected', `Placing order trigger is not allowed if there is any open position - [${trigger.buy_trader.Broker(), trigger.buy_trader.AccountNumber()}] has at least one open position`);
+            return false;
+        }
 
-        traderAccount.SyncPlacingOrders.set(SyncUtil.Unique(), placementA);
-        traderAccount.Peer().SyncPlacingOrders.set(SyncUtil.Unique(), placementB);
 
-        traderAccount.PlaceOrder(placementA);
-        traderAccount.Peer().PlaceOrder(placementB);
+        if (trigger.buy_trader.Peer().OpenOrdersCount() > 0) {
+            ipcSend('place-order-trigger-rejected', `Placing order trigger is not allowed if there is any open position - [${trigger.buy_trader.Peer().Broker(), trigger.buy_trader.Peer().AccountNumber()}] has at least one open position`);
+            return false;
+        }
 
+        return true;
+    }
+
+    public AddPlaceOrderTrigger(trigger: PlaceOrderTrigger) {
+
+        if (!this.CheckPlaceOrderTriggerPermission(trigger)) {
+            return;
+        }
+
+        this.PlaceOrdersTriggerList.push(trigger);
+
+        ipcSend('place-order-triggers', this.PlaceOrderTriggersSafecopies());
+
+
+        //TESTING STARTS
+
+       /* setTimeout(function () {
+
+            trigger.buy_trader.SetChartMarketPrice(1833.45);
+            trigger.buy_trader.Peer().SetChartMarketPrice(1833.45);
+        
+        }, 0);
+
+        setTimeout(function () {
+
+            trigger.buy_trader.SetAccountCredit(49);
+            trigger.buy_trader.Peer().SetAccountCredit(49);
+
+            trigger.buy_trader.SetAccountBalance(149);
+            trigger.buy_trader.Peer().SetAccountBalance(149);
+
+            trigger.buy_trader.SetChartMarketPrice(1895.45);
+            trigger.buy_trader.Peer().SetChartMarketPrice(1895.45);
+
+        }, 20000);*/
+
+        //TESTING ENDS
 
     }
+
+    public CancelPlaceOrderTrigger(uuid: string) {
+        
+        let found = false;
+        for (let i = 0; i < this.PlaceOrdersTriggerList.length; i++) {
+            
+            let trigger = this.PlaceOrdersTriggerList[i];
+            if (trigger.uuid == uuid) {
+                found = true;
+                if (!trigger.is_triggered) {
+                    this.PlaceOrdersTriggerList.splice(i, 1);
+
+                    ipcSend('cancel-place-order-trigger-success', this.PlaceOrderTriggersSafecopies());
+                } else {
+                    ipcSend('cancel-place-order-trigger-fail', "Cannot cancel place order trigger already triggered.");
+                }
+            }
+        }
+
+        if (!found) {
+            ipcSend('place-order-trigger-not-found', "Place order trigger not found.");
+        }
+    }
+    
+    private PlaceOrderTriggersSafecopies(): any[]{
+        var arr = [];
+        this.PlaceOrdersTriggerList.forEach(trigger => {
+            arr.push(trigger.Safecopy());
+        })
+
+        return arr;
+    }
+
+    public SyncPlaceOrders(traderAccountBUY: TraderAccount,
+        traderAccountA: TraderAccount,
+        traderAccountB: TraderAccount,
+        symbol: string,
+        lot_size_a: number,
+        lot_size_b: number,
+        max_percent_diff_in_account_balances: number = Infinity,
+        is_triggered: boolean = false) {
+
+        if (!traderAccountBUY.Peer()) {
+            return;
+        }
+
+        if (max_percent_diff_in_account_balances >= 0 && traderAccountA.AccountBalance() > 0 && traderAccountB.AccountBalance() > 0) {
+
+            var perecent_a = Math.abs((traderAccountA.AccountBalance() - traderAccountB.AccountBalance()) / traderAccountA.AccountBalance() * 100);
+            var perecent_b = Math.abs((traderAccountA.AccountBalance() - traderAccountB.AccountBalance()) / traderAccountB.AccountBalance() * 100);
+
+            if (perecent_a > max_percent_diff_in_account_balances) {
+
+                ipcSend('sync-place-order-reject', `Percent difference in account balance, ${traderAccountA.AccountBalance().toFixed(2)}${traderAccountA.AccountCurrency()} of [${traderAccountA.Broker()} , ${traderAccountA.AccountNumber()}]  from that of ${traderAccountB.AccountBalance().toFixed(2)}${traderAccountB.AccountCurrency()} of [${traderAccountB.Broker()} , ${traderAccountB.AccountNumber()}] which is ${perecent_a.toFixed(2)}% is greater than the allowable maximum of ${max_percent_diff_in_account_balances}%`);
+                return;
+            }
+
+            if (perecent_b > max_percent_diff_in_account_balances) {
+
+                ipcSend('sync-place-order-reject', `Percent difference in account balance, ${traderAccountB.AccountBalance().toFixed(2)}${traderAccountB.AccountCurrency()} of [${traderAccountB.Broker()} , ${traderAccountB.AccountNumber()}]  from that of  ${traderAccountA.AccountBalance().toFixed(2)}${traderAccountA.AccountCurrency()} of [${traderAccountA.Broker()} , ${traderAccountA.AccountNumber()}] which is ${perecent_b.toFixed(2)}% is greater than the allowable maximum of ${max_percent_diff_in_account_balances}%`);
+                return;
+            }
+        }
+
+
+        //clear off triggers for place order - the strategy does not permit allowing these triggers when any trade is open
+        this.ClearPlaceOrderTriggers('Placing order has cleared off all pending triggers.');
+
+
+        var paired_uuid = SyncUtil.Unique();
+        var placementA: OrderPlacement = null;
+        var placementB: OrderPlacement = null;
+
+        if (traderAccountBUY.Broker() == traderAccountA.Broker()
+            && traderAccountBUY.AccountNumber() == traderAccountA.AccountNumber()) {
+            placementA = new OrderPlacement(paired_uuid, symbol, Constants.BUY, lot_size_a, is_triggered);
+            placementB = new OrderPlacement(paired_uuid, symbol, Constants.SELL, lot_size_b, is_triggered);
+        } else {
+            placementA = new OrderPlacement(paired_uuid, symbol, Constants.SELL, lot_size_a, is_triggered);
+            placementB = new OrderPlacement(paired_uuid, symbol, Constants.BUY, lot_size_b, is_triggered);
+        }
+
+        traderAccountBUY.SyncPlacingOrders.set(paired_uuid, placementA);
+        traderAccountBUY.Peer().SyncPlacingOrders.set(paired_uuid, placementB);
+
+        //traderAccountBUY.PlaceOrder(placementA); //old
+        //traderAccountBUY.Peer().PlaceOrder(placementB);//old
+
+        traderAccountBUY.ValidatePlaceOrder(placementA); //new
+        traderAccountBUY.Peer().ValidatePlaceOrder(placementB);//new
+
+    }
+
+
+    public GetEmailer(): Emailer { return this.emailer; }
+
 
     public AddClient(traderAccount: TraderAccount) {
         this.unpairedAccounts.push(traderAccount);
@@ -128,7 +291,7 @@ export class SyncService {
 
     }
 
-    private IsAlive(traderAccount: TraderAccount):boolean {
+    private IsAlive(traderAccount: TraderAccount): boolean {
         if (traderAccount.IsConnected())
             return true;
 
@@ -137,7 +300,7 @@ export class SyncService {
         this.RemovePairing(traderAccount, true);//force remove pairing
 
         //dispose since we have unpaired it
-        
+
         for (let unpaired of this.unpairedAccounts) {
             if (unpaired.Broker() === traderAccount.Broker()
                 && unpaired.AccountNumber() === traderAccount.AccountNumber()
@@ -159,8 +322,8 @@ export class SyncService {
             ipcSend('could-not-remove-pairing', {
                 account: traderAccount.Safecopy(),
                 feedback: `Could not remove pairing of ${traderAccount.Broker()}, ${traderAccount.AccountNumber()}.\n`
-                           +`Action denied because order syncing was detected!\n` 
-                           +`It is unsafe to remove pairing when syncing is in progress except if it arised from account disconnection.`,
+                    + `Action denied because order syncing was detected!\n`
+                    + `It is unsafe to remove pairing when syncing is in progress except if it arised from account disconnection.`,
             });
 
             return;
@@ -175,8 +338,8 @@ export class SyncService {
                 this.unpairedAccounts.push(pair[0]);//return back to unpaired list
                 this.unpairedAccounts.push(pair[1]);//return back to unpaired list
 
-                pair[0].RsetOrdersSyncing();//reset all orders syncing to false
-                pair[1].RsetOrdersSyncing();//reset all orders syncing to false
+                pair[0].ResetOrdersSyncing();//reset all orders syncing to false
+                pair[1].ResetOrdersSyncing();//reset all orders syncing to false
 
                 pair[0].RemovePeer();
                 pair[1].RemovePeer();
@@ -207,7 +370,7 @@ export class SyncService {
                 if (this.IsAlive(pair[0])) {
                     callback(pair[0]);
                 }
-                
+
                 if (this.IsAlive(pair[1])) {
                     callback(pair[1]);
                 }
@@ -237,12 +400,117 @@ export class SyncService {
 
     }
 
+    private CheckRoutineSyncChecksInterval() {
+
+        //set timer for routine validation checks  
+
+        var secs = this.RoutineSyncChecksInterval();
+        if (this.LastRoutineSyncChecksInterval != secs) {
+            clearTimeout(this.RoutineSyncChecksIntervalID);
+            this.RoutineSyncChecksIntervalID = setInterval(this.RevalidateSyncAll.bind(this), secs);
+            this.LastRoutineSyncChecksInterval = secs;
+        }
+    }
+
+    private CheckRoutineRefreshAccountInfoInterval() {
+
+        //set timer for refreshing account info on the gui    
+        var secs = this.RoutineRefreshAccountInfoInterval();
+        if (this.LastRoutineRefreshAccountInfoInterval != secs) {
+            clearTimeout(this.RoutineRefreshAccountInfoIntervalID);
+            this.RoutineRefreshAccountInfoIntervalID = setInterval(this.RefreshAccountInfo.bind(this), secs);
+            this.LastRoutineRefreshAccountInfoInterval = secs;
+        }
+    }
+
+    private HandlePlaceOrderTriggers() {
+        var any_triggered = false;
+        for (let trigger of this.PlaceOrdersTriggerList) {
+            if (!trigger.VerifyPair()) {
+                continue;
+            }
+            if (!trigger.IsAccountBalanceDifferenceAllowed()) {
+                continue;
+            }
+
+            if (trigger.type == Constants.Instant_when_both_accounts_have_credit_bonuses
+                || trigger.type == Constants.Pending_at_price_when_both_accounts_have_credit_bonuses) {
+
+                if (!trigger.IsBothAccountsHaveCredits()) {
+                    continue;
+                }
+            }
+
+            if (trigger.type == Constants.Pending_at_price
+                || trigger.type == Constants.Pending_at_price_when_both_accounts_have_credit_bonuses) {
+                if (!trigger.IsPriceTrigger()) {
+                    continue;
+                }
+            }
+
+            //finally at this point there is a trigger
+            any_triggered = true;
+
+            this.PlaceOrderByTriger(trigger);
+
+            break;
+        }
+
+        if (any_triggered) {//clear all triggers if any is triggered
+            this.ClearPlaceOrderTriggers('All other triggers cleared off.');
+        }
+
+    }
+
+    private ClearPlaceOrderTriggers(message: string = '') {
+
+        if (this.PlaceOrdersTriggerList.length > 0) {
+            this.PlaceOrdersTriggerList = new Array<PlaceOrderTrigger>(); // initialize
+
+            ipcSend('place-order-triggers-clear', message);
+        }
+    }
+
+
+    PlaceOrderByTriger(trigger: PlaceOrderTrigger) {
+        if (!this.CheckPlaceOrderTriggerPermission(trigger)) {
+            return;
+        }
+
+        trigger.is_triggered = true;
+
+        this.SyncPlaceOrders(trigger.buy_trader,
+            trigger.buy_trader,
+            trigger.buy_trader.Peer(),//sell trader
+            trigger.symbol,
+            trigger.buy_lot_size,
+            trigger.sell_lot_size,
+            trigger.max_percent_diff_in_account_balances,
+            true);
+
+
+    }
+
     private Handler() {
+
+
+        this.CheckRoutineSyncChecksInterval();
+        this.CheckRoutineRefreshAccountInfoInterval();
+
         this.eachAccount((acct: TraderAccount) => {
             if (acct.HasReceived()) {
                 this.HandleRead(acct, acct.ReceiveData());
             }
+            try {
+                this.emailer.Handler(acct);
+                this.CheckPossibleLossPrevention(acct);
+            } catch (ex) {
+                console.log(ex);
+            }
+
         });
+
+        this.HandlePlaceOrderTriggers();
 
         setImmediate(this.Handler.bind(this));
 
@@ -272,6 +540,13 @@ export class SyncService {
         if (!traderAccount.IsKnown() || !peerAccount.IsKnown()) {
             if (is_gui) {
                 ipcSend('paired-fail', 'one or two of the account to pair with is unknown - possibly no broker name or account number');
+            }
+            return;
+        }
+
+        if (traderAccount.Version() != peerAccount.Version()) {
+            if (is_gui) {
+                ipcSend('paired-fail', `EA version of [${traderAccount.Broker()}, ${traderAccount.AccountNumber()}] (${traderAccount.Version()}) mismatch with that of [${peerAccount.Broker()}, ${peerAccount.AccountNumber()}] (${peerAccount.Version()})  - version must be the same`);
             }
             return;
         }
@@ -327,7 +602,7 @@ export class SyncService {
                     ipcSend('paired-fail', `Your app configuration settings does not permit pairing two live accounts with different account name:`
                         + `\n\nBroker: ${traderAccount.Broker()}\nAccount Number: ${traderAccount.AccountNumber()}\nAccount Name: ${traderAccount.AccountName()}`
                         + `\n---------------\nBroker: ${peerAccount.Broker()}\nAccount Number: ${peerAccount.AccountNumber()}\nAccount Name: ${peerAccount.AccountName()}`
-                        +`\n\nHint: You can deselect the option in your app settings to remove this restriction.`);
+                        + `\n\nHint: You can deselect the option in your app settings to remove this restriction.`);
                 }
                 return;
             }
@@ -512,6 +787,152 @@ export class SyncService {
         this.SaveSyncState();
     }
 
+    public handlePendingAccountOrderPlacement(uuid: string, send: boolean) {
+        var accPl: Array<AccountOrderPlacement> = this.pendingAccountPlacementOrderMap.get(uuid);
+        if (!accPl) {
+            return;
+        }
+        if (send) {
+            var traderAccount: TraderAccount = accPl[0][0];
+            var placement: OrderPlacement = accPl[0][1];
+
+            var peerAccount: TraderAccount = accPl[1][0];
+            var peer_placement: OrderPlacement = accPl[1][1];
+
+            //now send
+            traderAccount.PlaceOrder(placement);
+            peerAccount.PlaceOrder(peer_placement);
+        }
+
+        this.pendingAccountPlacementOrderMap.delete(uuid);
+    }
+
+    private OnValidatePlaceOrderResult(traderAccount: TraderAccount, uuid: string, spread_cost: number, required_margin: number, success: boolean, error: string) {
+
+        if (traderAccount == null) return;
+
+        var peerAccount = this.getPeer(traderAccount);
+
+        if (peerAccount == null) return;
+
+        var placement: OrderPlacement = traderAccount.SyncPlacingOrders.get(uuid);
+        var peer_placement: OrderPlacement = peerAccount.SyncPlacingOrders.get(uuid);
+
+        if (!success) {
+            
+            traderAccount.SyncPlacingOrders.delete(uuid);
+            peerAccount.SyncPlacingOrders.delete(uuid);
+
+            ipcSend('validate-place-order-fail', traderAccount.Safecopy());
+
+            return;
+        }
+
+        if (!placement) {//already deleted
+            return;
+        }
+
+        placement.SetValidateResult(success, error);
+        placement.SetSpreadCost(spread_cost);
+        placement.SetRequiredMargin(required_margin);
+
+        if (placement.state != Constants.VALIDATION_SUCCESS || peer_placement.state != Constants.VALIDATION_SUCCESS) {
+            return;//one done
+        }
+
+        if (SyncUtil.AppConfigMap.get('show_waning_message_if_loss_is_possible') == true) {
+
+            var aop1: AccountOrderPlacement = [traderAccount, placement];
+            var aop2: AccountOrderPlacement = [peerAccount, peer_placement];
+
+            this.pendingAccountPlacementOrderMap.set(uuid, [aop1, aop2]);
+
+            var crashAccount: TraderAccount = null;
+
+            var possibleLossA = this.HedgePossibleLoss(traderAccount, placement, peer_placement);
+            var possibleLossB = this.HedgePossibleLoss(peerAccount, peer_placement, placement);
+
+            var possible_loss: number = possibleLossA < possibleLossB ? possibleLossA : possibleLossB;
+            if (possibleLossA < possibleLossB) {
+                possible_loss = possibleLossA;
+                crashAccount = traderAccount;
+            } else {
+                possible_loss = possibleLossB;
+                crashAccount = peerAccount;
+            }
+
+            if (possible_loss < 0) {
+                if (!placement.is_triggered) { 
+                    ipcSend('show-place-order-warning-alert', {
+                        warning: this.LossWaringMessage(crashAccount, possible_loss),
+                        uuid: uuid
+                    });
+                } else {//for the case triggered order no need for warning alert. Just reject the order
+                    ipcSend('place-order-trigger-rejected', this.LossRejectionMessage(crashAccount, possible_loss));
+                }
+            }
+
+        } else {
+            traderAccount.PlaceOrder(placement);
+            peerAccount.PlaceOrder(peer_placement);
+        }
+
+        return;//both done
+
+    }
+
+    private HedgePossibleLoss(account: TraderAccount, placement: OrderPlacement, peer_placement: OrderPlacement): number {
+        if (!account.Peer()) return 0;
+
+        var peerAccount = account.Peer();
+
+        var stopout_amount: number  = account.AccountStopoutLevel() * placement.required_margin / 100;
+        var eatable_margin: number = placement.required_margin - stopout_amount;
+
+        var eatable_amount: number = account.AccountCredit() < eatable_margin ? account.AccountCredit() : eatable_margin;//smaller amount is eatable
+        
+        var possible_loss = eatable_amount - Math.abs(placement.spread_cost) - Math.abs(peer_placement.spread_cost)
+
+        possible_loss = parseFloat(possible_loss.toFixed(2));
+
+        return possible_loss;
+    }
+
+    private ComputeHedgeProfit(account: TraderAccount) {
+
+        if (!account.Peer()) {
+            return;
+        }
+
+        var stopout_amount: number = account.AccountStopoutLevel() * account.AccountMargin() / 100;
+        var margin_drop: number = account.AccountMargin() - stopout_amount;
+
+        var eatable_amount: number = account.AccountCredit() < margin_drop ? account.AccountCredit() : margin_drop;//smaller amount is eatable
+
+        var hedge_profit = eatable_amount - Math.abs(account.AccountTradeCost()) - Math.abs(account.Peer().AccountTradeCost())
+
+        hedge_profit = parseFloat(hedge_profit.toFixed(2));
+
+        account.SetHedgeProfit(hedge_profit);
+
+        //for tomorrow
+        var hedge_profit_tomorrow = account.HedgeProfit() + account.AccountSwapPerDay();
+
+        hedge_profit_tomorrow = parseFloat(hedge_profit_tomorrow.toFixed(2));
+
+        account.SetHedgeProfitTomorrow(hedge_profit_tomorrow);
+    }
+
+    private LossWaringMessage(crashAccount: TraderAccount, possible_loss: number) {
+
+        return `You may loss up to ${possible_loss} ${crashAccount.AccountCurrency()} on this sync trading position if account ${crashAccount.AccountNumber()} on ${crashAccount.Broker()} crashes.`;
+    }
+
+    private LossRejectionMessage(crashAccount: TraderAccount, possible_loss: number) {
+
+        return `Place order trigger was rejected because of possible loss of up to ${possible_loss} ${crashAccount.AccountCurrency()} on this sync trading position if account ${crashAccount.AccountNumber()} on ${crashAccount.Broker()} crashes.`;
+    }
+
     private OnPlaceOrderResult(traderAccount: TraderAccount, ticket: number,  uuid: string ,success: boolean) {
 
         if (traderAccount == null) return;
@@ -526,7 +947,7 @@ export class SyncService {
         if (!success) {
             if (!peerAccount.IsPlacementOrderClosed(uuid)) {//ensuring the peer order placement has not already closed
                 var placement: OrderPlacement = traderAccount.SyncPlacingOrders.get(uuid);
-                traderAccount.RetrySendPlaceOrder(placement);
+                traderAccount.RetrySendPlaceOrderOrForceClosePeer(placement);
             } else {
                 //Oops!!! the peer order placement has closed so just cancel and clear off the entries
 
@@ -537,13 +958,21 @@ export class SyncService {
         }
 
         placement.SetResult(ticket);
-
+        placement.SetOperationCompleteStatus(OrderPlacement.COMPLETE_SUCCESS);
 
         var order = traderAccount.GetOrder(ticket);
         if (order) {
             order.SetCopyable(false);
         }
 
+        //if peer did not complete with success status then focibly close this order
+        if (peer_placement.OperationCompleteStatus() == OrderPlacement.COMPLETE_FAIL) {
+            var ticket: number = placement.ticket;
+            var reason: string = traderAccount.ForceCloseReasonForFailedOrderPlacement(ticket);
+            traderAccount.ForceCloseMe(ticket, reason);//forcibly close this order
+            return 1;
+        }
+        
 
         if (placement.state != Constants.SUCCESS || peer_placement.state != Constants.SUCCESS) {
             return 1;//one done
@@ -575,11 +1004,12 @@ export class SyncService {
         if (!success) {
             var peer: TraderAccount = traderAccount.Peer();
             if (peer) {
-                peer.RetrySendCopy(origin_ticket);
+                peer.RetrySendCopyOrForceCloseMe(origin_ticket);
             }
             return ;
         }
-        
+
+
         this.DoOrderPair(traderAccount, peerAccount, ticket, origin_ticket);
     }
 
@@ -594,7 +1024,7 @@ export class SyncService {
 
         var origin_order = peerAccount.GetOrder(origin_ticket);
         if (origin_order) {
-            origin_order.SyncClosing(false);
+            origin_order.Closing(false);
         }
 
 
@@ -606,9 +1036,43 @@ export class SyncService {
             return;
         }
 
+        this.FinalizeCloseSuccess(traderAccount, ticket);
+    }
+
+    private OnOwnCloseResult(traderAccount: TraderAccount, ticket: number,  success: boolean) {
+
+        if (traderAccount == null) return;
+
+        var order = traderAccount.GetOrder(ticket);
+        if (order) {
+            order.Closing(false);
+        }
+
+
+        if (!success) {            
+            traderAccount.RetrySendClose(ticket, ticket);            
+            return;
+        }
+
+        //before we finalize lets ensure the peer order is also closed
+
+        var peerAccount = this.getPeer(traderAccount);
+
+        if (peerAccount == null) return;
+
+        var peer_order = peerAccount.GetOrder(order.peer_ticket);
+
+        if (order.IsClosed() && peer_order && peer_order.IsClosed()) {
+            this.FinalizeCloseSuccess(traderAccount, ticket);        
+        }
+        
+    }
+
+    private FinalizeCloseSuccess(traderAccount: TraderAccount, ticket: number) {
+
         let pairId = traderAccount.PairID();
 
-        
+
         let open_tickect_pairs: Array<PairTicket> = new Array<PairTicket>();
 
         if (this.syncOpenTickectPairs.get(pairId)) {
@@ -638,7 +1102,6 @@ export class SyncService {
 
         this.SaveSyncState();
     }
-
     /**
      * These are orders that have not been paired with its peer
      */
@@ -789,6 +1252,13 @@ export class SyncService {
 
     }
 
+    public RefreshAccountInfo(): void {
+        
+        this.eachPairedAccount((account: TraderAccount) => {
+            ipcSend('account-info', account.Safecopy());
+        });
+    }
+
     public  RevalidateSyncAll(): void {
 
         console.log("Revalidating all sync begins...");
@@ -854,16 +1324,25 @@ export class SyncService {
         let is_copy_trades: boolean = false;
         let is_close_trades: boolean = false;
         let is_modify_trades: boolean = false;
+        let is_account_balance_changed: boolean = false;
+        let validate_place_order_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
         let place_order_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
         let copy_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
+        let own_close_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
         let close_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
         let modify_target_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
         let modify_stoploss_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false 
         let error: string = "";
         let uuid: string = "";
+        let force: boolean = false;
+        let reason: string = "";
         var token = data.split(Constants.TAB);
         let new_target: number = 0;
         let new_stoploss: number = 0;
+        let fire_market_closed = false;
+        let fire_market_opened = false;
+        let spread_cost: number = 0;
+        let required_margin: number = 0;
         
 
         for (var i = 0; i < token.length; i++) {
@@ -872,9 +1351,21 @@ export class SyncService {
             var value = split[1];
 
             if (name == "is_market_closed") {
+                
                 if (value == "true") {
+                    //check if the previous state was open
+                    if (!account.IsMarketClosed()) {
+                        fire_market_closed = true;
+                    }
+
                     account.SetMarketClosed(true);
                 } else {
+                    //check if the previous state was close
+                    if (account.IsMarketClosed()) {
+                        fire_market_opened = true;
+                    }
+
+
                     account.SetMarketClosed(false);
                 }
             }
@@ -888,6 +1379,10 @@ export class SyncService {
 
             if (name == "uuid") {
                 uuid = value;
+            }
+
+            if (name == "version") {
+                account.SetVersion(value);
             }
 
             if (name == "broker") {
@@ -907,8 +1402,52 @@ export class SyncService {
                 account.SetAccountName(value);
             }
 
+            if (name == "account_balance") {
+                account.SetAccountBalance(parseFloat(value));
+            }
+
+            if (name == "account_equity") {
+                account.SetAccountEquity(parseFloat(value));
+            }
+
+            if (name == "account_credit") {
+                account.SetAccountCredit(parseFloat(value));
+            }
+
+            if (name == "account_currency") {
+                account.SetAccountCurrency(value);
+            }
+
+            if (name == "account_leverage") {
+                account.SetAccountLeverage(parseFloat(value));
+            }
+
+            if (name == "account_margin") {
+                account.SetAccountMargin(parseFloat(value));
+            }
+
+            if (name == "account_stopout_level") {
+                account.SetAccountStopoutLevel(parseFloat(value));
+            }
+
+            if (name == "account_profit") {
+                account.SetAccountProfit(parseFloat(value));
+            }
+
+            if (name == "account_free_margin") {
+                account.SetAccountFreeMargin(parseFloat(value));
+            }
+
+            if (name == "account_swap_per_day") {
+                account.SetAccountSwapPerDay(parseFloat(value));
+            }
+
             if (name == "chart_symbol") {
                 account.SetChartSymbol(value);
+            }
+
+            if (name == "chart_market_price") {
+                account.SetChartMarketPrice(parseFloat(value));
             }
 
             if (name == "platform_type") {
@@ -946,6 +1485,18 @@ export class SyncService {
                 }
             }
 
+            if (name == "force") {
+                force = value == "true";
+                var order: Order = account.GetOrder(ticket);
+                order.force = force;
+            }
+
+            if (name == "reason") {
+                reason = value;
+                var order: Order = account.GetOrder(ticket);
+                order.reason = reason;
+            }
+
             if (name == "origin_ticket") {
                 origin_ticket = parseInt(value);
             }
@@ -974,6 +1525,10 @@ export class SyncService {
                 account.GetOrder(ticket).open_price = Number.parseFloat(value);
             } 
 
+            if (name == "close_price") {
+                account.GetOrder(ticket).close_price = Number.parseFloat(value);
+            } 
+
             if (name == "lot_size") {
                 account.GetOrder(ticket).lot_size = Number.parseFloat(value);
             }
@@ -987,12 +1542,21 @@ export class SyncService {
             }       
             
             if (name == "close_time") {
-                account.GetOrder(ticket).close_time = Number.parseInt(value);
-                
+                var order: Order = account.GetOrder(ticket);
+                var was_close = order.close_time > 0;
+                order.close_time = Number.parseInt(value);
+                if (!was_close && order.close_time > 0) {//just closed
+                    this.emailer.OrderCloseNotify(account, order);
+                }
             }
 
             if (name == "open_time") {
-                account.GetOrder(ticket).open_time = Number.parseInt(value);
+                var order: Order = account.GetOrder(ticket);
+                var was_open = order.open_time > 0;
+                order.open_time = Number.parseInt(value);
+                if (!was_open && order.open_time > 0) {//just opened
+                    this.emailer.OrderOpenNotify(account, order);
+                }
             }
 
             if (name == "stoploss_change_time") {
@@ -1006,24 +1570,31 @@ export class SyncService {
             if (name == "copy_signal_time") {
                 account.GetOrder(ticket).copy_signal_time = Number.parseInt(value);
             }
+
             if (name == "close_signal_time") {
                 account.GetOrder(ticket).close_signal_time = Number.parseInt(value);
             }
+
             if (name == "modify_target_signal_time") {
                 account.GetOrder(ticket).modify_target_signal_time = Number.parseInt(value);
             }
+
             if (name == "modify_stoploss_signal_time") {
                 account.GetOrder(ticket).modify_stoploss_signal_time = Number.parseInt(value);
             }
+
             if (name == "copy_execution_time") {
                 account.GetOrder(ticket).copy_execution_time = Number.parseInt(value);
             }
+
             if (name == "close_execution_time") {
                 account.GetOrder(ticket).close_execution_time = Number.parseInt(value);
             }
+
             if (name == "modify_target_execution_time") {
                 account.GetOrder(ticket).modify_target_execution_time = Number.parseInt(value);
             }
+
             if (name == "modify_stoploss_execution_time") {
                 account.GetOrder(ticket).modify_stoploss_execution_time = Number.parseInt(value);
             }
@@ -1050,6 +1621,10 @@ export class SyncService {
                 modify_stoploss_success = value;
             }
 
+            if (name == "validate_place_order_success") {
+                validate_place_order_success = value;
+            }
+
             if (name == "place_order_success") {
                 place_order_success = value;
             }
@@ -1060,6 +1635,10 @@ export class SyncService {
 
             if (name == "close_success") {
                 close_success = value;
+            }
+
+            if (name == "own_close_success") {
+                own_close_success = value;
             }
 
             if (name == "copy_trades" && value == "true") {
@@ -1074,8 +1653,18 @@ export class SyncService {
                 is_modify_trades = true;
             }
 
-            
+            if (name == "account_balance_changed" && value == "true") {
+                is_account_balance_changed = true;
+            }
 
+            if (name == "spread_cost") {
+                spread_cost = parseFloat(value);
+            }
+
+            if (name == "required_margin") {
+                required_margin = parseFloat(value);
+            }
+            
             if (name == "error") {
                 error = value;
                 account.SetLastError(error);
@@ -1098,6 +1687,9 @@ export class SyncService {
         var peer = this.getTraderAccount(peer_broker, peer_account_number);
         this.PairTraderAccountWith(account, peer);
 
+        this.ComputeHedgeProfit(account);
+        this.ComputeHedgeProfit(account.Peer());//do for peer also
+
         if (ticket == -1) {
             console.log("investigate why ticket is ", ticket);
         }
@@ -1107,6 +1699,13 @@ export class SyncService {
             console.log("investigate why origin_ticket is ", origin_ticket);
         }
 
+        if (fire_market_closed) {
+            ipcSend('market-close', account.Safecopy());
+        }
+
+        if (fire_market_opened) {
+            ipcSend('market-open', account.Safecopy());
+        }
 
         if (is_copy_trades) {
             this.SendCopyToPeer(account);
@@ -1119,7 +1718,20 @@ export class SyncService {
         if (is_modify_trades || is_stoploss_changed) {
             this.SendModifyToPeer(account);
         }
-        
+
+        if (is_account_balance_changed) {
+            ipcSend('account-balance-changed', account.Safecopy());
+        }
+
+        if (validate_place_order_success == "true") {
+            this.OnValidatePlaceOrderResult(account, uuid, spread_cost, required_margin, true, error)
+        }
+
+        if (validate_place_order_success == "false") {
+            this.OnValidatePlaceOrderResult(account, uuid, spread_cost, required_margin, false, error)
+        }
+
+
 
         if (place_order_success == "true") {
             var result = this.OnPlaceOrderResult(account, ticket, uuid, true);
@@ -1147,15 +1759,36 @@ export class SyncService {
             ipcSend('sync-copy-fail', account.Safecopy());
         }
 
+        if (own_close_success == "true") {
+            this.OnOwnCloseResult(account, ticket, true);           
+            ipcSend('own-close-success', {
+                account: account.Safecopy(),
+                force: force,
+                reason: reason
+            });
+            
+        }
+
+        if (own_close_success == "false") {
+            this.OnOwnCloseResult(account, ticket, false);
+            ipcSend('own-close-fail', {
+                account: account.Safecopy(),
+                force: force,
+                ticket: ticket
+            });
+        }
+
+
         if (close_success == "true") {
             this.OnCloseResult(account, ticket, origin_ticket, true);
-            ipcSend('sync-close-success', account.Safecopy());
+            ipcSend('sync-close-success', account.Safecopy());            
         }
 
         if (close_success == "false") {
             this.OnCloseResult(account, ticket, origin_ticket, false);
             ipcSend('sync-close-fail', account.Safecopy());
         }
+
 
         if (modify_target_success == "true") {
             this.OnModifyTargetResult(account, ticket, origin_ticket, new_target, true, error);
@@ -1178,4 +1811,39 @@ export class SyncService {
         }
 
     }
+
+    private CheckPossibleLossPrevention(account: TraderAccount) {
+
+        var before_swap_time = SyncUtil.AppConfigMap.get('automatically_avoid_loss_due_to_next_day_swap_by_closing_trades_before_swap_time'); // in milliseconds already
+        
+        if (!before_swap_time || before_swap_time <= 0) {
+            return;//not set - so leave
+        }
+
+        if (account.HedgeProfitTomorrow() > 0) {
+            return;
+        }
+
+
+        if (account.Peer() && account.Peer().HedgeProfitTomorrow() > 0) {
+            return;
+        }
+
+        var GMT = 2; //We are using GMT+2 
+
+        var swap_time = new Date().setUTCHours(24 + GMT); //the time swap is charged tomorrow
+
+        var diff_time = swap_time - Date.now();
+
+        if (diff_time > before_swap_time) {
+            return;
+        }
+        
+
+        //at this point the trades must be closed to avoid loss
+
+        account.CloseAllTrades('closing-all-trades', 'Closing all tradings to avoid hedge loss due to swap increase.');//close both own trades and peer trades
+
+    }
+
 }

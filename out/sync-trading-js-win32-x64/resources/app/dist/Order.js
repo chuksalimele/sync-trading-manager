@@ -9,6 +9,7 @@ var Order = /** @class */ (function () {
         this.open_time = 0;
         this.stoploss = 0;
         this.target = 0;
+        this.close_price = 0;
         this.close_time = 0;
         this.lot_size = 0;
         this.default_spread = 0;
@@ -24,8 +25,10 @@ var Order = /** @class */ (function () {
         this.close_execution_time = 0;
         this.modify_target_execution_time = 0;
         this.modify_stoploss_execution_time = 0;
+        this.force = false; //force close or a forced operation
+        this.reason = ''; // reason for the last forced operation
         this.is_sync_copying = false;
-        this.is_sync_closing = false;
+        this.is_closing = false;
         this.is_sync_modifying_target = false;
         this.is_sync_modifying_stoploss = false;
         this.is_copyable = true;
@@ -36,7 +39,11 @@ var Order = /** @class */ (function () {
     ;
     Order.prototype.SyncCopying = function (copying) { return this.is_sync_copying = copying; };
     ;
-    Order.prototype.SyncClosing = function (closing) { return this.is_sync_closing = closing; };
+    /**
+     * Sync or own closing
+     * @param closing
+     */
+    Order.prototype.Closing = function (closing) { return this.is_closing = closing; };
     ;
     Order.prototype.SyncModifyingTarget = function (modifying_target) { return this.is_sync_modifying_target = modifying_target; };
     ;
@@ -44,7 +51,10 @@ var Order = /** @class */ (function () {
     ;
     Order.prototype.IsSyncCopying = function () { return this.is_sync_copying; };
     ;
-    Order.prototype.IsSyncClosing = function () { return this.is_sync_closing; };
+    /**
+     * Sync or own closing
+     */
+    Order.prototype.IsClosing = function () { return this.is_closing; };
     ;
     Order.prototype.IsSyncModifyingTarget = function () { return this.is_sync_modifying_target; };
     ;

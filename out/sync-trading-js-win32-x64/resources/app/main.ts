@@ -3,6 +3,9 @@
   Object.defineProperty(exports, "__esModule", { value: true });
 
 import { App } from './app';
+import { Config } from './Config';
+import { Constants } from './Constants';
+import { PlaceOrderTrigger } from './PlaceOrderTrigger';
 import { SyncUtil } from './SyncUtil';
 const { app, ipcMain, BrowserWindow } = require('electron')
 
@@ -114,10 +117,67 @@ function Main() {
     ipcMain.on('place-order', function (event, obj) {
 
         var service = mainApp.GetSyncService();
-        var account = service.getTraderAccount(obj.account.broker, obj.account.account_number);
-        service.SyncPlaceOrders(account, obj.symbol, obj.lot_size);
+        var account_buy = service.getTraderAccount(obj.account_buy.broker, obj.account_buy.account_number);
+        var account_a = service.getTraderAccount(obj.account_a.broker, obj.account_a.account_number);
+        var account_b = service.getTraderAccount(obj.account_b.broker, obj.account_b.account_number);
+
+        service.SyncPlaceOrders(account_buy, account_a, account_b, obj.symbol, obj.lot_size_a, obj.lot_size_b, obj.max_percent_diff_in_account_balances);
 
     });
+
+    ipcMain.on('place-order-trigger', function (event, obj) {
+
+        var service = mainApp.GetSyncService();
+        var account_buy = service.getTraderAccount(obj.account_buy.broker, obj.account_buy.account_number);
+        var account_a = service.getTraderAccount(obj.account_a.broker, obj.account_a.account_number);
+        var account_b = service.getTraderAccount(obj.account_b.broker, obj.account_b.account_number);
+        var trigger: PlaceOrderTrigger = new PlaceOrderTrigger();
+
+        trigger.buy_trader = account_buy;
+        trigger.buy_lot_size = account_buy.StrID() == account_a.StrID() ? obj.lot_size_a : obj.lot_size_b;
+        trigger.sell_lot_size = account_buy.StrID() == account_a.StrID() ? obj.lot_size_b : obj.lot_size_a;
+        trigger.pair_id = account_buy.PairID();
+        trigger.price = obj.trigger_price;
+        trigger.pivot_price = account_buy.ChartMarketPrice();
+        trigger.type = obj.trigger_type;
+        trigger.symbol = obj.symbol;
+        trigger.max_percent_diff_in_account_balances = obj.max_percent_diff_in_account_balances;
+
+        `<option value="Instant now">Instant now</option>
+                            <option value="Instant when both accounts have credit bonuses">Instant when both accounts have credit bonuses</option>
+                            <option value="Pending at price">Pending at price</option>
+                            <option value="Pending at price when both accounts have credit bonuses">Pending at price when both accounts have credit bonuses</option>
+`
+
+        if (trigger.type == Constants.Pending_at_price
+            || trigger.type == Constants.Pending_at_price_when_both_accounts_have_credit_bonuses) {
+            if (obj.trigger_price > trigger.pivot_price) {
+                trigger.remark = `The order will be execute immediately when market price gets to or goes above ${obj.trigger_price}`
+            } else {
+                trigger.remark = `The order will be execute immediately when market price gets to or goes below ${obj.trigger_price}`
+            }            
+        }
+
+        if (trigger.type == Constants.Pending_at_price_when_both_accounts_have_credit_bonuses){
+            trigger.remark += ` and credit bonuses are available for both accounts`
+        }
+
+        if (trigger.type == Constants.Instant_when_both_accounts_have_credit_bonuses) {
+            trigger.remark = `The order will be execute immediately when credit bonuses are available for both accounts`
+        }
+
+        service.AddPlaceOrderTrigger(trigger);
+
+    });
+
+    ipcMain.on('cancel-place-order-trigger', function (event, uuid) {
+
+        var service = mainApp.GetSyncService();
+        
+        service.CancelPlaceOrderTrigger(uuid);
+
+    });
+
 
     ipcMain.on('save-symbols-config', function (event, obj) {
 
@@ -134,19 +194,38 @@ function Main() {
     });
 
 
-    ipcMain.on('get-symbols-config', function (event, obj) {
-        ipcSend('symbols-config', SyncUtil.MapToObject(SyncUtil.AppConfigMap));        
+    ipcMain.on('get-app-config', function (event, defaultConfigObj) {
+        var configObj = SyncUtil.MapToObject(SyncUtil.AppConfigMap);
+
+        for (var n in defaultConfigObj) {
+            //set to default if the property is not present in the saved config
+            if (!(n in configObj)) {
+                configObj[n] = defaultConfigObj[n];
+            }
+        }
+
+        //Re-save the config
+        SyncUtil.SaveAppConfig(configObj, function (success) {
+
+            if (success) {
+                ipcSend('app-config', configObj);
+            } else {
+                ipcSend('app-config-init-fail', false);
+            }
+
+        });
+       
     });
 
 
-    ipcMain.on('save-settings', function (event, obj) {
+    ipcMain.on('save-general-settings', function (event, obj) {
 
         SyncUtil.SaveAppConfig(obj, function (success) {
 
             if (success) {
-                ipcSend('settings-save-success', obj);
+                ipcSend('general-settings-save-success', obj);
             } else {
-                ipcSend('settings-save-fail', false);
+                ipcSend('general-settings-save-fail', false);
             }
 
         });
@@ -154,8 +233,84 @@ function Main() {
     });
 
 
-    ipcMain.on('get-settings', function (event, obj) {
-        ipcSend('settings', SyncUtil.MapToObject(SyncUtil.AppConfigMap));
+    ipcMain.on('save-email-notification-config', function (event, obj) {
+
+        SyncUtil.SaveAppConfig(obj, function (success) {
+
+            if (success) {
+                ipcSend('email-notification-config-save-success', obj);
+            } else {
+                ipcSend('email-notification-config-save-fail', false);
+            }
+
+        });
+
     });
 
+
+    ipcMain.on('verify-email-notification-connection', function (event, obj) {
+
+        mainApp.GetSyncService().GetEmailer().verifyConnection(obj, function (error, success) {
+
+            if (success) {
+                ipcSend('email-notification-connection-verify-success', obj);
+            } else {
+                ipcSend('email-notification-connection-verify-fail', error);
+            }
+
+        });
+
+    });
+
+
+    ipcMain.on('auto-compute-lot-size', function (event, obj) {
+
+        var service = mainApp.GetSyncService();
+        var account_a = service.getTraderAccount(obj.account_a.broker, obj.account_a.account_number);
+        var account_b = service.getTraderAccount(obj.account_b.broker, obj.account_b.account_number);
+
+        var symbol = obj.symbol;//for now this is not neccessary
+
+        var result_a = account_a.AutoLotSize(account_b);
+        var result_b = account_b.AutoLotSize(account_a);
+
+
+        if (typeof result_a === 'number' && typeof result_b === 'number') {
+            ipcSend('auto-lot-size-success', {
+                account_a: account_a.Safecopy(),
+                account_b: account_b.Safecopy(),
+                lot_size_a: result_a,
+                lot_size_b: result_b
+            });
+        }
+
+        if (typeof result_a === 'string') {
+            ipcSend('auto-lot-size-fail', {
+                account: account_a.Safecopy(),
+                error: result_a
+            });
+        }
+
+        if (typeof result_b === 'string') {
+            ipcSend('auto-lot-size-fail', {
+                account: account_b.Safecopy(),
+                error: result_b
+            });
+        }
+
+    });
+
+
+    ipcMain.on('accept-warning-place-order', function (event, uuid) {
+        var service = mainApp.GetSyncService();
+        service.handlePendingAccountOrderPlacement(uuid, true);
+    });
+
+    ipcMain.on('reject-warning-place-order', function (event, uuid) {
+        var service = mainApp.GetSyncService();
+        service.handlePendingAccountOrderPlacement(uuid, false);
+    });
+
+
+    
 }

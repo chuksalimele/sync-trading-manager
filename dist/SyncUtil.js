@@ -9,7 +9,7 @@ var SyncUtil = /** @class */ (function () {
     }
     SyncUtil.WaitAsyncUntil = function (fun, condition) {
         if (!condition()) {
-            setImmediate(this.WaitAsyncUntil, fun, condition);
+            setImmediate(this.WaitAsyncUntil.bind(this), fun, condition);
         }
         else {
             fun();

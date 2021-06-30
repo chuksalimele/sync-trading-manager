@@ -13,9 +13,15 @@ export class SyncUtil {
     private static CountSeq: number = 0;
     public static AppConfigMap: Map<string, any> = new Map<string, any>();
 
-
+    static WaitAsyncUntil(fun: Function, condition: Function) {
+        if (!condition()) {
+            setImmediate(this.WaitAsyncUntil.bind(this), fun, condition);
+        } else {
+            fun();
+        }
+    }
     static Unique(): string {
-        return "" + this.CountSeq + this.InitUnique;
+        return "" + (++this.CountSeq) + this.InitUnique;
     }
 
     static IsApproxZero(num: number): boolean {
@@ -132,14 +138,21 @@ export class SyncUtil {
 
     }
 
-
     public static SyncPlackeOrderPacket(placement: OrderPlacement, broker: string) {
-        return `uuid=` + placement.paired_uuid + Constants.TAB 
+        return SyncUtil.PlackeOrderPacket(placement, broker, 'sync_place_order');
+    }
+
+    public static SyncPlackeValidateOrderPacket(placement: OrderPlacement, broker: string) {
+        return SyncUtil.PlackeOrderPacket(placement, broker, 'sync_validate_place_order');       
+    }
+
+    public static PlackeOrderPacket(placement: OrderPlacement, broker: string, action: string) {
+        return `uuid=` + placement.paired_uuid + Constants.TAB
             + `symbol=` + placement.symbol + Constants.TAB
             + `relative_symbol=` + SyncUtil.GetRelativeSymbol(placement.symbol, broker) + Constants.TAB
             + `position=` + placement.position + Constants.TAB
             + `lot_size=` + placement.lot_size + Constants.TAB
-            + `action=sync_place_order`;
+            + `action=` + action;
     }
 
     public static SyncCopyPacket(order: Order, trade_copy_type: string, broker: string): string {
@@ -167,6 +180,13 @@ export class SyncUtil {
     public static SyncClosePacket(ticket: number, origin_ticket: number): string {
         return `ticket=` + ticket + Constants.TAB // the ticket to be closed
             + `origin_ticket=` + origin_ticket + Constants.TAB + `action=sync_close`;
+    }
+
+    public static OwnClosePacket(ticket: number, force: boolean, reason: string = ''): string {
+        return `ticket=` + ticket + Constants.TAB // the ticket to be closed
+             + `force=` + force + Constants.TAB
+             + `reason=` + reason + Constants.TAB
+             + `action=own_close`;
     }
 
     public static SyncModifyTargetPacket(price: number, ticket: number, origin_ticket: number): string {
@@ -240,6 +260,11 @@ export class SyncUtil {
     static LogCloseRetry(account: TraderAccount, origin_ticket: number, peer_ticket: number, attempts: number) {
         var final: string = attempts >= Constants.MAX_CLOSE_RETRY ? "FINAL " : "";
         console.log(`[${attempts}] ${final}CLOSE RETRY : Sending close of #${origin_ticket} to target #${peer_ticket} - from [${account.Broker()}, ${account.AccountNumber()}] to [${account.Peer().Broker()}, ${account.Peer().AccountNumber()}]`);
+    }
+
+    static LogOwnCloseRetry(account: TraderAccount, ticket: number, attempts: number) {
+        var final: string = attempts >= Constants.MAX_CLOSE_RETRY ? "FINAL " : "";
+        console.log(`[${attempts}] ${final}CLOSE RETRY : Sending close of #${ticket} from [${account.Broker()}, ${account.AccountNumber()}]`);
     }
 
     static LogModifyTargetRetry(account: TraderAccount, origin_ticket: number, peer_ticket: number, attempts: number) {
