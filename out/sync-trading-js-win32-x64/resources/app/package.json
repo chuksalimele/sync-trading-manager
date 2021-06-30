@@ -1,0 +1,66 @@
+{
+  "name": "sync-trading-js",
+  "version": "0.0.0",
+  "description": "SyncTradingJS",
+  "main": "dist/main.js",
+  "author": {
+    "name": "Chuks Alimele"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^6.0.0-beta.54",
+    "@electron-forge/maker-deb": "^6.0.0-beta.54",
+    "@electron-forge/maker-rpm": "^6.0.0-beta.54",
+    "@electron-forge/maker-squirrel": "^6.0.0-beta.54",
+    "@electron-forge/maker-wix": "^6.0.0-beta.54",
+    "@electron-forge/maker-zip": "^6.0.0-beta.54",
+    "electron": "^11.0.3",
+    "electron-wix-msi": "^3.0.6",
+    "typescript": "^4.1.3"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.0",
+    "exe-icon-extractor": "^1.0.8",
+    "mkdirp": "^1.0.4"
+  },
+  "config": {
+    "forge": {
+      "packagerConfig": {},
+      "makers": [
+        {
+          "name": "@electron-forge/maker-wix",
+          "config": {
+            "description": "This app sync two trading accounts for risk free trading",
+            "exe": "sync-trading-js",
+            "name": "Sync Trading App",
+            "manufacturer": "Chuks Alimele",
+            "version": "1.0.0",
+            "ui": {
+              "chooseDirectory": true
+            }
+          }
+        },
+        {
+          "name": "@electron-forge/maker-zip",
+          "platforms": [
+            "darwin"
+          ]
+        },
+        {
+          "name": "@electron-forge/maker-deb",
+          "config": {}
+        },
+        {
+          "name": "@electron-forge/maker-rpm",
+          "config": {}
+        }
+      ]
+    }
+  }
+}
