@@ -1100,7 +1100,7 @@ function confirmTradeEntryHTML(obj) {
                           </tr>
                           <tr>
                             <th>TRIGGER PRICE</th>
-                            <th colspan="2" ${obj.trigger_type == 'Instant now' ? 'style="font-style: italic;"' : ''}>${obj.trigger_type == 'Instant now' ? 'At market price' : obj.trigger_price}</th>
+                            <th colspan="2" ${obj.trigger_type == 'Instant now' || obj.trigger_type == 'Instant when both accounts have credit bonuses' ? 'style="font-style: italic;"' : ''}>${obj.trigger_type == 'Instant now' || obj.trigger_type == 'Instant when both accounts have credit bonuses' ? 'At market price' : obj.trigger_price}</th>
                           </tr>
                           <tr>
                             <th>SYMBOL</th>
