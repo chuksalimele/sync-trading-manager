@@ -27,7 +27,9 @@ var App = /** @class */ (function () {
         server.listen(Config_1.Config.PIPE_PATH, function () {
             //console.log('Stream server pipe listening on ' + Config.PIPE_PATH);
         });
-        main_1.ipcSend('sync-running', true);
+        main_1.ipcSend('sync-running', {
+            version: Config_1.Config.VERSION
+        });
     };
     App.prototype.OnClose = function () {
         //console.log('Stream server pipe closed');

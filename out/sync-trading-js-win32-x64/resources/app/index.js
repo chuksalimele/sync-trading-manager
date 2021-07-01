@@ -1668,7 +1668,7 @@ function placeOrderTriggersHTML() {
                           </tr>
                           <tr>
                             <th>TRIGGER PRICE</th>
-                            <th colspan="2" ${trigger.type == 'Instant now' ? 'style="font-style: italic;"' : ''}>${trigger.type == 'Instant now' ? 'At market price' : trigger.price}</th>
+                            <th colspan="2" ${trigger.type == 'Instant when both accounts have credit bonuses' ? 'style="font-style: italic;"' : ''}>${trigger.type == 'Instant when both accounts have credit bonuses' ? 'At market price' : trigger.price}</th>
                           </tr>
                           <tr>
                             <th>SYMBOL</th>
