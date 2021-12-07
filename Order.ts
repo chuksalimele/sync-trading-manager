@@ -74,7 +74,7 @@ export class Order {
     public SetDefaultSpread(default_spread: number) { this.default_spread = default_spread; }
 
     public Spread(broker: string): number {
-        this.spread = SyncUtil.SymbolSpread(broker, this.symbol, this.point);
+        this.spread = SyncUtil.SymbolSpread(broker, this.raw_symbol, this.point);
         return this.spread > 0 ? this.spread : this.default_spread;
     }
 

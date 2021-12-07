@@ -4,6 +4,12 @@ exports.Emailer = void 0;
 var nodemailer = require('nodemailer');
 var main_1 = require("./main");
 var SyncUtil_1 = require("./SyncUtil");
+var TriState;
+(function (TriState) {
+    TriState[TriState["INITIAL"] = 0] = "INITIAL";
+    TriState[TriState["OFF"] = 1] = "OFF";
+    TriState[TriState["ON"] = 2] = "ON";
+})(TriState || (TriState = {}));
 var Emailer = /** @class */ (function () {
     /**
      *
@@ -86,7 +92,7 @@ var Emailer = /** @class */ (function () {
             return;
         }
         if (account.AccountEquity() >= account.AccountBalance()) {
-            this.FlagNotifyNearStopout.set(account.StrID(), true); // flag it on
+            this.FlagNotifyNearStopout.set(account.StrID(), TriState.INITIAL); // flag it initial
         }
         if (account.AccountMargin() == 0) {
             return;
@@ -100,31 +106,37 @@ var Emailer = /** @class */ (function () {
             return;
         }
         //at this point stopout is near
-        if (!this.FlagNotifyNearStopout.get(account.StrID())) { //check if flagged off to avoid neccessary repetition
+        if (this.FlagNotifyNearStopout.get(account.StrID()) == TriState.INITIAL) {
+            this.FlagNotifyNearStopout.set(account.StrID(), TriState.ON);
+        }
+        if (this.FlagNotifyNearStopout.get(account.StrID()) === TriState.OFF) { //check if flagged off to avoid unneccessary repetition
             return;
         }
         //send the mail
         this.send('SYNC TRADE MANAGER - NEAR STOPOUT NOTIFICATION', "<h3>Near Stopout Notification</h3>\n                <p>This is to notify you that stopout is near. See details below:</p>\n                <p>\n               <table cellspacing=\"0\"  cellpadding = \"5\" >\n                  <thead style=\"background: brown; color: white;\" > \n                    <tr><th></th><th>" + (account.IsLiveAccount() ? "Live" : "Demo") + " Account Near Stopout</th><th>" + (account.IsLiveAccount() ? "Live" : "Demo") + " Account Peer</th><tr>\n                  </thead> \n\n                  <tbody style=\"text-align: left;\"> \n                      <tr>\n                            <th style=\"min-width: 120px;\">Broker</th>\n                            <td style=\"color: red; min-width: 120px;\">" + account.Broker() + "</td>\n                            <td style=\"min-width: 120px;\">" + account.Peer().Broker() + "</td>\n                      </tr>\n                      <tr>\n                            <th style=\"min-width: 120px;\">Account Number</th>\n                            <td style=\"color: red; min-width: 120px;\">" + account.AccountNumber() + "</td>\n                            <td style=\"min-width: 120px;\">" + account.Peer().AccountNumber() + "</td>\n                      </tr>\n\n                      <tr>\n                            <th style=\"min-width: 120px;\">Account Name</th>\n                            <td style=\"color: red; min-width: 120px;\">" + account.AccountName() + "</td>\n                            <td style=\"min-width: 120px;\">" + account.Peer().AccountName() + "</td>\n                      </tr>\n\n                      <tr>\n                            <th style=\"min-width: 120px;\">Margin</th>\n                            <td style=\"color: red; min-width: 120px;\">" + account.AccountMargin() + "</td>\n                            <td style=\"min-width: 120px;\">" + account.Peer().AccountMargin() + "</td>\n                      </tr>\n\n                      <tr>\n                            <th style=\"min-width: 120px;\">Equity</th>\n                            <td style=\"color: red; min-width: 120px;\">" + account.AccountEquity() + "</td>\n                            <td style=\"min-width: 120px;\">" + account.Peer().AccountEquity() + "</td>\n                      </tr>\n\n                    </tbody> \n               </table> \n              </p>  \n             "
             +
                 this.syncOrdersHTML(account));
-        this.FlagNotifyNearStopout.set(account.StrID(), false); //flag it off 
+        this.FlagNotifyNearStopout.set(account.StrID(), TriState.OFF); //flag it off 
     };
     Emailer.prototype.CheckToNotifyMarginCall = function (account) {
         if (account.AccountEquity() >= account.AccountBalance()) {
-            this.FlagNotifyMarginCall.set(account.StrID(), true); // flag it on
+            this.FlagNotifyMarginCall.set(account.StrID(), TriState.INITIAL); // flag it initial
         }
         if (account.AccountEquity() > account.AccountMargin()) {
             return;
         }
         //at this margin call has occurred
-        if (!this.FlagNotifyMarginCall.get(account.StrID())) { //check if flagged off to avoid neccessary repetition
+        if (this.FlagNotifyMarginCall.get(account.StrID()) == TriState.INITIAL) {
+            this.FlagNotifyMarginCall.set(account.StrID(), TriState.ON);
+        }
+        if (this.FlagNotifyMarginCall.get(account.StrID()) == TriState.OFF) { //check if flagged off to avoid unneccessary repetition
             return;
         }
         //send the mail
         this.send('SYNC TRADE MANAGER - MARGIN CALL NOTIFICATION', "<h3>Margin Call Notification</h3>\n                <p>This is to notify you that margin call has occurred. See details below:</p>\n                <p>\n               <table cellspacing=\"0\"  cellpadding = \"5\" >\n                  <thead style=\"background: brown; color: white;\" > \n                    <tr><th></th><th>" + (account.IsLiveAccount() ? "Live" : "Demo") + " Account With Margin Call</th><th>" + (account.IsLiveAccount() ? "Live" : "Demo") + " Account Peer</th><tr>\n                  </thead> \n\n                  <tbody style=\"text-align: left;\">\n                      <tr>\n                            <th style=\"min-width: 120px;\">Broker</th>\n                            <td style=\"color: red; min-width: 120px;\">" + account.Broker() + "</td>\n                            <td style=\"min-width: 120px;\">" + account.Peer().Broker() + "</td>\n                      </tr>\n                      <tr>\n                            <th style=\"min-width: 120px;\">Account Number</th>\n                            <td style=\"color: red; min-width: 120px;\">" + account.AccountNumber() + "</td>\n                            <td style=\"min-width: 120px;\">" + account.Peer().AccountNumber() + "</td>\n                      </tr>\n\n                      <tr>\n                            <th style=\"min-width: 120px;\">Account Name</th>\n                            <td style=\"color: red; min-width: 120px;\">" + account.AccountName() + "</td>\n                            <td style=\"min-width: 120px;\">" + account.Peer().AccountName() + "</td>\n                      </tr>\n\n                      <tr>\n                            <th style=\"min-width: 120px;\">Margin</th>\n                            <td style=\"color: red; min-width: 120px;\">" + account.AccountMargin() + "</td>\n                            <td style=\"min-width: 120px;\">" + account.Peer().AccountMargin() + "</td>\n                      </tr>\n\n                      <tr>\n                            <th style=\"min-width: 120px;\">Equity</th>\n                            <td style=\"color: red; min-width: 120px;\">" + account.AccountEquity() + "</td>\n                            <td style=\"min-width: 120px;\">" + account.Peer().AccountEquity() + "</td>\n                      </tr>\n\n                    </tbody>\n\n               </table> \n              </p>  \n             "
             +
                 this.syncOrdersHTML(account));
-        this.FlagNotifyMarginCall.set(account.StrID(), false); //flag it off 
+        this.FlagNotifyMarginCall.set(account.StrID(), TriState.OFF); //flag it off 
     };
     Emailer.prototype.OrderOpenNotify = function (account, order) {
         this.send('SYNC TRADE MANAGER - ORDER OPENED NOTIFICATION', "<h3>Order Opened Notification</h3>\n                <p>Order with ticket #" + order.ticket + " has opened at price " + order.open_price + " on the following " + (account.IsLiveAccount() ? 'live' : 'demo') + " account:</p>\n                <p>\n                  <table style=\"text-align: left;\"  cellspacing=\"0\"  cellpadding = \"2\" >\n                      <tr>\n                            <th style=\"min-width: 120px;\">Broker</th>\n                            <td style=\"min-width: 120px;\">" + account.Broker() + "</td>\n                      </tr>\n                      <tr>\n                            <th style=\"min-width: 120px;\">Account Number</th>\n                            <td style=\"min-width: 120px;\">" + account.AccountNumber() + "</td>\n                      </tr>\n\n                      <tr>\n                            <th style=\"min-width: 120px;\">Account Name</th>\n                            <td style=\"min-width: 120px;\">" + account.AccountName() + "</td>\n                      </tr>\n\n               </table> \n                </p>  \n             ");

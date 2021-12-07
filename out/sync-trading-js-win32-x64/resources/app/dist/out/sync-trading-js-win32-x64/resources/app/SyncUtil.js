@@ -7,8 +7,16 @@ var Constants_1 = require("./Constants");
 var SyncUtil = /** @class */ (function () {
     function SyncUtil() {
     }
+    SyncUtil.WaitAsyncUntil = function (fun, condition) {
+        if (!condition()) {
+            setImmediate(this.WaitAsyncUntil.bind(this), fun, condition);
+        }
+        else {
+            fun();
+        }
+    };
     SyncUtil.Unique = function () {
-        return "" + this.CountSeq + this.InitUnique;
+        return "" + (++this.CountSeq) + this.InitUnique;
     };
     SyncUtil.IsApproxZero = function (num) {
         return Math.abs(num) < Constants_1.Constants.APPROX_ZERO_TOLERANCE;
@@ -97,12 +105,18 @@ var SyncUtil = /** @class */ (function () {
         }
     };
     SyncUtil.SyncPlackeOrderPacket = function (placement, broker) {
+        return SyncUtil.PlackeOrderPacket(placement, broker, 'sync_place_order');
+    };
+    SyncUtil.SyncPlackeValidateOrderPacket = function (placement, broker) {
+        return SyncUtil.PlackeOrderPacket(placement, broker, 'sync_validate_place_order');
+    };
+    SyncUtil.PlackeOrderPacket = function (placement, broker, action) {
         return "uuid=" + placement.paired_uuid + Constants_1.Constants.TAB
             + "symbol=" + placement.symbol + Constants_1.Constants.TAB
             + "relative_symbol=" + SyncUtil.GetRelativeSymbol(placement.symbol, broker) + Constants_1.Constants.TAB
             + "position=" + placement.position + Constants_1.Constants.TAB
             + "lot_size=" + placement.lot_size + Constants_1.Constants.TAB
-            + "action=sync_place_order";
+            + "action=" + action;
     };
     SyncUtil.SyncCopyPacket = function (order, trade_copy_type, broker) {
         if (order.ticket == -1 &&
@@ -123,6 +137,13 @@ var SyncUtil = /** @class */ (function () {
     SyncUtil.SyncClosePacket = function (ticket, origin_ticket) {
         return "ticket=" + ticket + Constants_1.Constants.TAB // the ticket to be closed
             + "origin_ticket=" + origin_ticket + Constants_1.Constants.TAB + "action=sync_close";
+    };
+    SyncUtil.OwnClosePacket = function (ticket, force, reason) {
+        if (reason === void 0) { reason = ''; }
+        return "ticket=" + ticket + Constants_1.Constants.TAB // the ticket to be closed
+            + "force=" + force + Constants_1.Constants.TAB
+            + "reason=" + reason + Constants_1.Constants.TAB
+            + "action=own_close";
     };
     SyncUtil.SyncModifyTargetPacket = function (price, ticket, origin_ticket) {
         return "target=" + price + Constants_1.Constants.TAB
@@ -182,6 +203,10 @@ var SyncUtil = /** @class */ (function () {
     SyncUtil.LogCloseRetry = function (account, origin_ticket, peer_ticket, attempts) {
         var final = attempts >= Constants_1.Constants.MAX_CLOSE_RETRY ? "FINAL " : "";
         console.log("[" + attempts + "] " + final + "CLOSE RETRY : Sending close of #" + origin_ticket + " to target #" + peer_ticket + " - from [" + account.Broker() + ", " + account.AccountNumber() + "] to [" + account.Peer().Broker() + ", " + account.Peer().AccountNumber() + "]");
+    };
+    SyncUtil.LogOwnCloseRetry = function (account, ticket, attempts) {
+        var final = attempts >= Constants_1.Constants.MAX_CLOSE_RETRY ? "FINAL " : "";
+        console.log("[" + attempts + "] " + final + "CLOSE RETRY : Sending close of #" + ticket + " from [" + account.Broker() + ", " + account.AccountNumber() + "]");
     };
     SyncUtil.LogModifyTargetRetry = function (account, origin_ticket, peer_ticket, attempts) {
         var final = attempts >= Constants_1.Constants.MAX_MODIFY_RETRY ? "FINAL " : "";

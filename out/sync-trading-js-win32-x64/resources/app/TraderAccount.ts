@@ -32,7 +32,6 @@ export class TraderAccount {
     private account_trade_cost: number = 0;
     private chart_market_price: number = 0;//this is the current market price on the chart where the EA is loaded
     private hedge_profit: number = 0;
-    private hedge_profit_tomorrow: number = 0;
     private trade_copy_type: string;
     private is_market_closed: boolean;
     private is_live_account: boolean|null;
@@ -51,8 +50,9 @@ export class TraderAccount {
     private readonly MODIFY_TARGET: number = 1;
     private readonly MODIFY_STOPLOSS: number = 2;
     public SyncPlacingOrders: Map<string, OrderPlacement> = new Map<string, OrderPlacement>();
-
+    public test :number = 0;
     constructor(socket: any) {
+        this.test = 7;
         this.socket = socket;
         this.IsSockConnected = true;
         socket.on('data', this.OnSocketData.bind(this));
@@ -82,7 +82,6 @@ export class TraderAccount {
             account_profit: this.account_profit,
             account_free_margin: this.account_free_margin,
             hedge_profit: this.hedge_profit,
-            hedge_profit_tomorrow: this.hedge_profit_tomorrow,
             chart_symbol: this.chart_symbol,
             chart_market_price: this.chart_market_price,
             platform_type: this.platform_type,
@@ -110,7 +109,6 @@ export class TraderAccount {
                 account_profit: this.peer.account_profit,
                 account_free_margin: this.peer.account_free_margin,
                 hedge_profit: this.peer.hedge_profit,
-                hedge_profit_tomorrow: this.peer.hedge_profit_tomorrow,
                 chart_symbol: this.peer.chart_symbol,
                 chart_market_price: this.peer.chart_market_price,
                 platform_type: this.peer.platform_type,
@@ -161,8 +159,6 @@ export class TraderAccount {
     public AccountTradeCost(): number { return this.account_trade_cost };
 
     public HedgeProfit(): number { return this.hedge_profit };
-
-    public HedgeProfitTomorrow(): number { return this.hedge_profit_tomorrow };
 
     public ChartSymbol(): string { return this.chart_symbol };
 
@@ -364,10 +360,6 @@ export class TraderAccount {
         this.hedge_profit = hedge_profit
     }
 
-    public SetHedgeProfitTomorrow(hedge_profit_tomorrow: number): void {
-        this.hedge_profit_tomorrow = hedge_profit_tomorrow
-    }
-
     public SetChartSymbol(chart_symbol: string): void {
         this.chart_symbol = chart_symbol
     }
@@ -375,7 +367,6 @@ export class TraderAccount {
     public SetChartMarketPrice(chart_market_price: number): void {
         this.chart_market_price = chart_market_price
     }
-
 
 
     public SetPlatformType(platform_type: string): void {
@@ -494,7 +485,7 @@ export class TraderAccount {
             this.AccountLeverage()
             : this.Peer().AccountLeverage();
 
-        var risk = 1; //determines the size of account to risk -  0.5 mean half of account; 1 means full account, which is only possible with leverage of >= 200; 2 means twice account possible with >= 400 leverage 
+        var risk = 0.65; //determines the size of account to risk -  0.5 mean half of account; 1 means full account, which is only possible with leverage of >= 200; 2 means twice account possible with >= 400 leverage 
 
         var factor = 1;
 
@@ -503,14 +494,59 @@ export class TraderAccount {
         }
 
         if (smLeverage == 100 || smLeverage == 200) {
-            factor = 0.98; //just a little less than 1 avoid Not Enough Money error
+            factor = 0.98; //just a little less than 1 to avoid Not Enough Money error
         }
 
-        lot = this.AccountBalance() * risk * factor / 1000;
+        var bigger_acct_bal = this.AccountBalance() > peer.AccountBalance() ? 
+                                this.AccountBalance() : 
+                                peer.AccountBalance();
+
+        lot = bigger_acct_bal * risk * factor / 1000;
 
         return parseFloat(lot.toFixed(2));
     }
 
+    public DetermineLotSizefromPips(peer: TraderAccount, pips: number,  price: number, units: number): number|string {
+        if (this.Peer() == null) {
+            return "Peer cannot be null";
+        }
+
+        if (this.Peer().StrID() != peer.StrID()) {
+            return "The assign peer for computing auto lot size mismatch";
+        }
+
+        var stopout_level_in_fraction =  this.AccountStopoutLevel() /100;       
+        var urt = price * units * stopout_level_in_fraction;
+
+        var numerator = this.AccountLeverage() *(this.AccountBalance() + this.AccountCredit());
+        var denumenator = 10 * pips * this.AccountLeverage() + urt;
+ 
+        var lot = numerator/ denumenator;
+
+
+        return parseFloat(lot.toFixed(2));
+    }
+
+
+    public DeterminePossibleProfitfromPips(peer: TraderAccount, pips: number,  price: number, units: number): number|string {
+        if (this.Peer() == null) {
+            return "Peer cannot be null";
+        }
+
+        if (this.Peer().StrID() != peer.StrID()) {
+            return "The assign peer for computing auto lot size mismatch";
+        }
+
+        var stopout_level_in_fraction =  this.AccountStopoutLevel() /100;       
+        var urt = price * units * stopout_level_in_fraction;
+        var stopout_amount = urt * ( this.AccountBalance() + this.AccountCredit()) / (10 * pips * this.AccountLeverage() + urt); 
+
+        
+        var possible_profit = this.AccountCredit() - stopout_amount;
+
+        return parseFloat(possible_profit.toFixed(2));
+    }
+    
     /**
      *This method will be used to position each peer in the appropriate column when pairing for consistent access location  
      */

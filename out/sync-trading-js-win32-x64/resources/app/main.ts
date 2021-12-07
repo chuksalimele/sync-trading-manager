@@ -35,7 +35,7 @@ function Main() {
         win = new BrowserWindow({
             width: 1300,
             height: 750,
-            title: 'Sync Trading Manager',
+            title: `Sync Trading Manager v${Config.VERSION}`,
             webPreferences: {
                 nodeIntegration: true
             }

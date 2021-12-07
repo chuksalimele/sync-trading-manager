@@ -37,6 +37,8 @@ var TraderAccount = /** @class */ (function () {
         this.MODIFY_TARGET = 1;
         this.MODIFY_STOPLOSS = 2;
         this.SyncPlacingOrders = new Map();
+        this.test = 0;
+        this.test = 7;
         this.socket = socket;
         this.IsSockConnected = true;
         socket.on('data', this.OnSocketData.bind(this));
@@ -399,15 +401,18 @@ var TraderAccount = /** @class */ (function () {
         var smLeverage = this.AccountLeverage() <= this.Peer().AccountLeverage() ?
             this.AccountLeverage()
             : this.Peer().AccountLeverage();
-        var risk = 1; //determines the size of account to risk -  0.5 mean half of account; 1 means full account, which is only possible with leverage of >= 200; 2 means twice account possible with >= 400 leverage 
+        var risk = 0.65; //determines the size of account to risk -  0.5 mean half of account; 1 means full account, which is only possible with leverage of >= 200; 2 means twice account possible with >= 400 leverage 
         var factor = 1;
         if (smLeverage == 100) {
             var risk = 0.5;
         }
         if (smLeverage == 100 || smLeverage == 200) {
-            factor = 0.98; //just a little less than 1 avoid Not Enough Money error
+            factor = 0.98; //just a little less than 1 to avoid Not Enough Money error
         }
-        lot = this.AccountBalance() * risk * factor / 1000;
+        var bigger_acct_bal = this.AccountBalance() > peer.AccountBalance() ?
+            this.AccountBalance() :
+            peer.AccountBalance();
+        lot = bigger_acct_bal * risk * factor / 1000;
         return parseFloat(lot.toFixed(2));
     };
     /**

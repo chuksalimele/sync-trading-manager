@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+
       {
         "name": "Debug Main Process",
         "type": "node",
@@ -8,9 +9,10 @@
         "cwd": "${workspaceFolder}",
         "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron",
         "windows": {
-          "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron.cmd"
+          "runtimeExecutable": "${workspaceFolder}/node_modules/electron/dist/electron.exe"
         },
         "args" : ["."],
+        "outFiles": ["${workspaceFolder}/dist/**/*.js"],
         "outputCapture": "std"
       }
     ]

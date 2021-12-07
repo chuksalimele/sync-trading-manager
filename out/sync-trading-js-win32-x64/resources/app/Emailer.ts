@@ -7,14 +7,19 @@ import { TraderAccount } from "./TraderAccount";
 import { SyncUtil } from "./SyncUtil";
 import { Order } from "./Order";
 
+enum TriState {
+    INITIAL,
+    OFF,
+    ON
+}
 
 export class Emailer {
     
+    private TRISTATE: 0 | 1 | 2;
     private transporter: any;
-    private FlagNotifyMarginCall: Map<string, boolean> = new Map();
-    private FlagNotifyNearStopout: Map<string, boolean> = new Map();
+    private FlagNotifyMarginCall: Map<string, TriState> = new Map();
+    private FlagNotifyNearStopout: Map<string, TriState> = new Map();
     private FlagNotifySessionInformationAtInterval: Map<string, number> = new Map();
-    
     
     /**
      *
@@ -44,7 +49,7 @@ export class Emailer {
 
      **/
     constructor() {
-        
+
     }
 
 
@@ -166,9 +171,9 @@ export class Emailer {
             return;
         }
 
-
+        
         if (account.AccountEquity() >= account.AccountBalance()) {
-            this.FlagNotifyNearStopout.set(account.StrID(), true);// flag it on
+            this.FlagNotifyNearStopout.set(account.StrID(), TriState.INITIAL);// flag it initial
         }
 
         if (account.AccountMargin() == 0) {
@@ -189,8 +194,13 @@ export class Emailer {
         }
 
         //at this point stopout is near
-   
-        if (!this.FlagNotifyNearStopout.get(account.StrID())) {//check if flagged off to avoid neccessary repetition
+
+        if (this.FlagNotifyNearStopout.get(account.StrID()) == TriState.INITIAL) {
+            this.FlagNotifyNearStopout.set(account.StrID(), TriState.ON)
+        }
+
+
+        if (this.FlagNotifyNearStopout.get(account.StrID()) === TriState.OFF) {//check if flagged off to avoid unneccessary repetition
             return; 
         }
 
@@ -245,14 +255,14 @@ export class Emailer {
         );
 
 
-        this.FlagNotifyNearStopout.set(account.StrID(), false);//flag it off 
+        this.FlagNotifyNearStopout.set(account.StrID(), TriState.OFF);//flag it off 
 
     }
 
     CheckToNotifyMarginCall(account: TraderAccount) {
 
         if (account.AccountEquity() >= account.AccountBalance()) {
-            this.FlagNotifyMarginCall.set(account.StrID(), true);// flag it on
+            this.FlagNotifyMarginCall.set(account.StrID(), TriState.INITIAL);// flag it initial
         }
 
         if (account.AccountEquity() > account.AccountMargin()) {
@@ -261,8 +271,11 @@ export class Emailer {
 
         //at this margin call has occurred
 
+        if (this.FlagNotifyMarginCall.get(account.StrID()) == TriState.INITIAL) {
+            this.FlagNotifyMarginCall.set(account.StrID(), TriState.ON)
+        }
 
-        if (!this.FlagNotifyMarginCall.get(account.StrID())) {//check if flagged off to avoid neccessary repetition
+        if (this.FlagNotifyMarginCall.get(account.StrID()) == TriState.OFF) {//check if flagged off to avoid unneccessary repetition
             return;
         }
 
@@ -317,7 +330,7 @@ export class Emailer {
         );
 
 
-        this.FlagNotifyMarginCall.set(account.StrID(), false);//flag it off 
+        this.FlagNotifyMarginCall.set(account.StrID(), TriState.OFF);//flag it off 
     }
 
     public OrderOpenNotify(account: TraderAccount, order: Order) {
