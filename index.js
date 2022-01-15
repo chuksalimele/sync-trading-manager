@@ -25,11 +25,12 @@ var selectedPairingAccountA = null;
 
 var selectedPairingAccountB = null;
 
+var prevPairedTableHTML = null;
+
 var AppConfig = {
   //set default properties
   spread: {},
   symbol: {},
-  show_waning_message_if_loss_is_possible: true,
   maximum_log_records: 200,
   sync_check_interval_in_seconds: 10,
   refresh_account_info_interval_in_seconds: 30,
@@ -139,6 +140,20 @@ alertify.defaults.notifier.delay = 20;
           function () {}
         );
       }
+    });
+
+    $("#show_compute_lot_size_dialog").on("click", function () {      
+      
+      var account_for_buy_value = $("#place_order_dialog_accounts").dropdown(
+        "get value"
+      );
+
+      if (!account_for_buy_value) {
+        alertBox("Invalid", "Please select account for buy side!");
+        return;
+      }
+
+      ComputeLotSize();
     });
 
     ipc.send("start-sync", true);
@@ -388,6 +403,7 @@ alertify.defaults.notifier.delay = 20;
       setAccount(arg);
     });
 
+    //retain this validation message
     ipc.on("validate-place-order-fail", function (event, arg) {
       console.log("validate-place-order-fail", arg);
 
@@ -702,19 +718,11 @@ alertify.defaults.notifier.delay = 20;
       }
     );
 
-    ipc.on("auto-lot-size-success", function (event, arg) {
-      console.log("auto-lot-size-success");
+    ipc.on("lot-stoploss-loss-at-stopout-result", function (event, arg) {
+      console.log("lot-stoploss-loss-at-stopout-result");
 
-      OnAutoLotSizeSuccess(arg);
+      OnLotStoplossAndLossAtStopoutResult(arg);
     });
-
-    ipc.on("auto-lot-size-fail", function (event, arg) {
-      alertBox(
-        "Failed",
-        `[${arg.account.broker}, ${arg.account.account_number}] auto lot size failed! ${arg.error}`
-      );
-    });
-
     ipc.on("show-place-order-warning-alert", function (event, arg) {
       confirmBox(
         "Warning",
@@ -772,32 +780,52 @@ alertify.defaults.notifier.delay = 20;
     });
   });
 
-function dailogBox(obj) {
+function dialogBox(obj) {
   var dialog = alertify[obj.type].apply(alertify, obj.params);
 
-  dialog.set({
+  dlgSetObj = {
     onclose: function () {
       alertCollection.splice(0, 1);
       nextDialog();
+      if(typeof obj.settings.onclose === 'function'){
+        obj.settings.onclose();
+      }
     },
-  });
+    resizable : !!(obj.settings.width && obj.settings.height)
+  }; 
+
+  var dlgSet = dialog.set(dlgSetObj);
+
+  if(dlgSetObj.resizable){
+    dlgSet.resizeTo(obj.settings.width, obj.settings.height);
+  }
+
 }
 
 function nextDialog() {
   var obj = alertCollection[0];
   if (obj) {
-    setImmediate(dailogBox, obj);
+    setImmediate(dialogBox, obj);
   }
 }
 
 function doBox(type, argus) {
   var params = [];
+  var settings = {}
+  var n=0;
   for (var i = 0; i < argus.length; i++) {
-    params[i] = argus[i];
+    if(typeof argus[i] === 'object'){
+      settings = argus[i];
+    }else{
+      params[n] = argus[i];
+      n++
+    }
+   
   }
   var alertObj = {
     type: type,
     params: params,
+    settings: settings
   };
 
   alertCollection.push(alertObj);
@@ -824,6 +852,146 @@ function mergeObjectTo(fromObj, toObj) {
 
   return toObj;
 }
+
+
+function ComputeLotSize() {
+    var pair = currentPair();
+    if (!pair) {
+      return;
+    }
+    var accountA = pair[0];
+    var accountB = pair[1];
+
+  var obj = {
+    accountA: accountA,
+    accountB: accountB
+  }
+
+  
+  var symbol = document.getElementById(
+    "place_order_dialog_symbols"
+    ).value;
+
+    if (!symbol) {
+      alertBox("Invalid", "Please select symbol!");
+      return false;
+    }
+
+
+
+  if ((typeof AppConfig.symbol[symbol][accountA.broker][accountA.account_number] === "string" && AppConfig.symbol[symbol][accountA.broker][accountA.account_number] === "") 
+      ||(typeof AppConfig.symbol[symbol][accountA.broker][accountA.account_number] === "object" && AppConfig.symbol[symbol][accountA.broker][accountA.account_number]['symbol'] === "")) {
+    alertBox(
+      "Invalid",
+      `Please configure the relative of ${symbol} for ${accountA.broker}!`
+    );
+    return false;
+  }
+
+
+  if ((typeof AppConfig.symbol[symbol][accountB.broker][accountB.account_number] === "string" && AppConfig.symbol[symbol][accountB.broker][accountB.account_number] === "") 
+      ||(typeof AppConfig.symbol[symbol][accountB.broker][accountB.account_number] === "object" && AppConfig.symbol[symbol][accountB.broker][accountB.account_number]['symbol'] === "")) {
+    alertBox(
+      "Invalid",
+      `Please configure the relative of ${symbol} for ${accountB.broker}!`
+    );
+    return false;
+  }
+
+
+  var match_chart_symbol = generalSymbol(accountA, accountB);
+          
+  if (!match_chart_symbol) {
+    alertBox("Invalid", `Chart symbols on both account do not correspond with each other or probably not properly configured in symbol settings!`);
+    return false;
+  }
+
+
+  if (symbol !== match_chart_symbol) {
+    alertBox("Invalid", `The selected symbol ${symbol}) does not correspond with the chart symbol.\nMake sure the chart symbols on both accounts are correspond with each other and properly configured in symbol settings!`);
+    return false;
+  }
+
+  confirmBox('Compute Lot Size',
+  {
+    width: '70%',
+    height: '95%',
+    onclose : function(){
+      var lot_size_a = document.getElementById('compute_lot_size_dialog_lot_size_for_account_a').value;
+      var lot_size_b = document.getElementById('compute_lot_size_dialog_lot_size_for_account_b').value;
+  
+      var sl_pips_a = document.getElementById('compute_lot_size_dialog_sl_pips_for_account_a').value;
+      var sl_pips_b = document.getElementById('compute_lot_size_dialog_sl_pips_for_account_b').value;
+  
+      if (lot_size_a < 0) {        
+        alertBox("Invalid", `Invalid lot size!\nLot size can not be negative: ${lot_size_a}`);
+        document.getElementById('place_order_dialog_lot_size_for_account_a').value = 0;
+        document.getElementById('place_order_dialog_lot_size_for_account_b').value = 0;
+        document.getElementById('place_order_dialog_trade_count_due_to_lot_limit').value = 0;
+      }
+  
+      if (lot_size_b < 0) {        
+        alertBox("Invalid", `Invalid lot size!\nLot size can not be negative: ${lot_size_b}`);
+        document.getElementById('place_order_dialog_lot_size_for_account_a').value = 0;
+        document.getElementById('place_order_dialog_lot_size_for_account_b').value = 0;
+        document.getElementById('place_order_dialog_trade_count_due_to_lot_limit').value = 0;
+      }
+  
+      if (sl_pips_a < 0) {        
+        alertBox("Invalid", `Invalid lot size due to wrong stoploss!\nStoploss pips can not be negative: ${sl_pips_a}`);
+        document.getElementById('place_order_dialog_lot_size_for_account_a').value = 0;
+        document.getElementById('place_order_dialog_lot_size_for_account_b').value = 0;
+        document.getElementById('place_order_dialog_trade_count_due_to_lot_limit').value = 0;
+      }
+  
+      if (sl_pips_b < 0) {        
+        alertBox("Invalid", `Invalid lot size due to wrong stoploss!\nStoploss pips can not be negative: ${sl_pips_b}`);
+        document.getElementById('place_order_dialog_lot_size_for_account_a').value = 0;
+        document.getElementById('place_order_dialog_lot_size_for_account_b').value = 0;
+        document.getElementById('place_order_dialog_trade_count_due_to_lot_limit').value = 0;
+      }
+      
+    }
+  },
+  computeLotSizeHTML(obj),
+  function(){
+  
+    var lot_size_a = document.getElementById('compute_lot_size_dialog_lot_size_for_account_a').value;
+    var lot_size_b = document.getElementById('compute_lot_size_dialog_lot_size_for_account_b').value;
+
+    document.getElementById('place_order_dialog_lot_size_for_account_a').value = lot_size_a;
+
+    document.getElementById('place_order_dialog_lot_size_for_account_b').value = lot_size_b;
+
+    //determine number of trade split
+    var max_lot_size_a = accountA.chart_symbol_max_lot_size;
+    var max_lot_size_b = accountB.chart_symbol_max_lot_size;
+
+    var trade_split_count_a = Math.ceil(lot_size_a / max_lot_size_a); // round up to the nearest integer
+    var trade_split_count_b = Math.ceil(lot_size_b / max_lot_size_b); // round up to the nearest integer
+
+    //however if the lot size is exactly equal to the max allowed then split into 2 - we do not 
+    //know if brokesr will allow trade for now if exactly equal to the max
+
+    if(lot_size_a == max_lot_size_a){
+      trade_split_count_a = 2; //remove it block if we later confirm the brokers allow trade if the lot is exactly equal to the max allowed
+    }
+
+    if(lot_size_b == max_lot_size_b){
+      trade_split_count_b = 2;//remove it block if we later confirm the brokers allow trade if the lot is exactly equal to the max allowed
+    }
+
+    //pick the higher split count
+    var trade_split_count = trade_split_count_a > trade_split_count_b ? trade_split_count_a : trade_split_count_b;
+
+    document.getElementById('place_order_dialog_trade_count_due_to_lot_limit').value = trade_split_count;
+
+
+  }, function(){})
+
+}
+
+
 
 function PlaceOrder() {
   var pair = currentPair();
@@ -870,15 +1038,33 @@ function PlaceOrder() {
           "place_order_dialog_symbols"
         ).value;
 
-        var lot_size_a = document.getElementById(
+        var trade_split_count = document.getElementById('place_order_dialog_trade_count_due_to_lot_limit').value
+
+        var lot_size_a = parseFloat((document.getElementById(
           "place_order_dialog_lot_size_for_account_a"
-        ).value;
-        var lot_size_b = document.getElementById(
+        ).value / trade_split_count).toFixed(2)); //divided by the number of trades
+
+        var lot_size_b = parseFloat((document.getElementById(
           "place_order_dialog_lot_size_for_account_b"
-        ).value;
+        ).value / trade_split_count).toFixed(2)); //divided by the number of trades
+
 
         if (!symbol) {
           alertBox("Invalid", "Please select symbol!");
+          return false;
+        }
+
+        var match_chart_symbol = generalSymbol(accountA, accountB);
+
+        
+        if (!match_chart_symbol) {
+          alertBox("Invalid", `Chart symbols on both account do not correspond with each other or probably not properly configured in symbol settings!`);
+          return false;
+        }
+
+        
+        if (symbol !== match_chart_symbol) {
+          alertBox("Invalid", `The selected symbol ${symbol}) does not correspond with the chart symbol.\nMake sure the chart symbols on both accounts are correspond with each other and properly configured in symbol settings!`);
           return false;
         }
 
@@ -931,6 +1117,7 @@ function PlaceOrder() {
         obj.symbol = symbol;
         obj.lot_size_a = lot_size_a;
         obj.lot_size_b = lot_size_b;
+        obj.trade_split_count = trade_split_count;
         obj.trigger_type = trigger_type;
         obj.trigger_price = trigger_price;
         obj.max_percent_diff_in_account_balances =
@@ -945,8 +1132,11 @@ function PlaceOrder() {
           alertBox("Not Found", "Relative symbol not found!");
           return false;
         }
+        
+        
 
-        if (!AppConfig.symbol[symbol][broker]) {
+        if ((typeof AppConfig.symbol[symbol][broker][account_number] === "string" && AppConfig.symbol[symbol][broker][account_number] === "") 
+          ||(typeof AppConfig.symbol[symbol][broker][account_number] === "object" && AppConfig.symbol[symbol][broker][account_number]['symbol'] === ""))  {
           alertBox(
             "Invalid",
             `Please configure the relative of ${symbol} for ${broker}!`
@@ -954,14 +1144,19 @@ function PlaceOrder() {
           return false;
         }
 
-        var peer_broker = getPeerBroker(broker);
-
-        if (!peer_broker) {
-          alertBox("Error", `Could not find peer broker for ${broker}`);
+        var peer_account = getPeerAccount(broker, account_number);
+        
+        if (!peer_account) {
+          alertBox("Error", `Could not find peer account for ${broker}, ${account_number}`);
           return false;
         }
 
-        if (!AppConfig.symbol[symbol][peer_broker]) {
+        var peer_broker = peer_account.broker;
+        var peer_account_number = peer_account.account_number;
+        
+
+        if ((typeof AppConfig.symbol[symbol][peer_broker][peer_account_number] === "string" && AppConfig.symbol[symbol][peer_broker][peer_account_number] === "") 
+          ||(typeof AppConfig.symbol[symbol][peer_broker][peer_account_number] === "object" && AppConfig.symbol[symbol][peer_broker][peer_account_number]['symbol'] === "")){
           alertBox(
             "Attention",
             `Please configure the relative of ${symbol} for ${peer_broker}!`
@@ -969,10 +1164,12 @@ function PlaceOrder() {
           return false;
         }
 
-        if (!AppConfig.spread[symbol] || AppConfig.spread[symbol] <= 0) {
+        if (typeof AppConfig.spread[symbol] === 'undefined'
+         || AppConfig.spread[symbol] === null 
+         || AppConfig.spread[symbol] < 0) {
           alertBox(
             "Invalid",
-            `Spread for ${symbol} must be greater than zero!\nHint: refer to Symbols Configuration to set value greater than zero.`
+            `Spread for ${symbol} must be at least zero!\nHint: refer to Symbols Configuration to set value at least zero.`
           );
           return false;
         }
@@ -1039,6 +1236,11 @@ function PlaceOrder() {
         $("#place_order_dialog_label_lot_size_for_account_b").html(
           `${accountB.broker}, ${accountB.account_number}`
         );
+        $("#place_order_dialog_label_trade_count_due_to_lot_limit").html(
+          `${accountA.chart_symbol_max_lot_size < accountB.chart_symbol_max_lot_size
+            ?accountA.chart_symbol_max_lot_size
+            : accountB.chart_symbol_max_lot_size}`
+        );
 
         document.getElementById(
           "place_order_dialog_lot_size_for_account_a"
@@ -1057,32 +1259,10 @@ function PlaceOrder() {
         document.getElementById("place_order_dialog_trigger_price").value =
           accountA.chart_market_price;
 
-        var symbol = generalSymbol(accountA, accountB);
+        var match_chart_symbol = generalSymbol(accountA, accountB);
 
-        document.getElementById("place_order_dialog_symbols").value = symbol;
+        document.getElementById("place_order_dialog_symbols").value = match_chart_symbol;
 
-        autoLotSize(symbol);
-
-        $("#place_order_dialog_use_auto_computed_lot_size_checkbox").checkbox({
-          onChecked: function () {
-            document.getElementById(
-              "place_order_dialog_lot_size_for_account_a"
-            ).disabled = "disabled";
-            document.getElementById(
-              "place_order_dialog_lot_size_for_account_b"
-            ).disabled = "disabled";
-            autoLotSize();
-          },
-
-          onUnchecked: function () {
-            document.getElementById(
-              "place_order_dialog_lot_size_for_account_a"
-            ).disabled = false;
-            document.getElementById(
-              "place_order_dialog_lot_size_for_account_b"
-            ).disabled = false;
-          },
-        });
       },
     })
     .modal("show");
@@ -1186,8 +1366,8 @@ function confirmTradeEntryHTML(obj) {
                           </tr>
                           <tr>
                             <td>LOT SIZE</td>
-                            <td>${obj.lot_size_a}</td>
-                            <td>${obj.lot_size_b}</td>
+                            <td>${obj.lot_size_a} ${obj.trade_split_count > 1? "( x"+obj.trade_split_count + " )":""}</td>
+                            <td>${obj.lot_size_b} ${obj.trade_split_count > 1? "( x"+obj.trade_split_count + " )":""}</td>
                           </tr>
                     </tbody>
                     <tfoot class="full-width">
@@ -1198,12 +1378,140 @@ function confirmTradeEntryHTML(obj) {
   return html;
 }
 
+function computeLotSizeHTML(obj){
+  var accountA = obj.accountA;
+  var accountB = obj.accountB;
+
+  return `
+  
+          <form class="ui form">
+
+              <div class="two fields">
+                <div class="field">
+                    <label style="text-align: right;"><pre style="display: inline;">Symbol : </pre>${generalSymbol(accountA, accountB)}</label>
+                </div>
+                <div class="field">
+                    <label style="text-align: right;"><pre style="display: inline;"> Total Account Balance : </pre>${(accountA.account_balance + accountB.account_balance).toFixed(2) } ${accountA.account_currency}</label>
+                </div>
+              </div>
+
+              <div class="two fields" style="margin-bottom:-5px !important;">
+                <div class="field">
+                  <label style="margin-bottom: 10px;">Acct Bal. <i>${accountA.account_balance}</i></label>
+                </div>
+                <div class="field">
+                  <label style="margin-bottom: 10px;">Acct Bal. <i>${accountB.account_balance}</i></label>
+                </div>
+              </div>  
+
+              <div class="two fields">
+                  <div class="field" id ="compute_lot_size_dialog_wrapper_lot_size_for_account_a">                      
+                      <label>Lot size for <i id="compute_lot_size_dialog_label_lot_size_for_account_a">${accountA.broker}, ${accountA.account_number}</i></label>
+                      <input oninput="onComputeLotSizeChange(this)" id="compute_lot_size_dialog_lot_size_for_account_a" type="number" min="0" data-broker="${accountA.broker}" data-account-number="${accountA.account_number}">
+                  </div>
+                  <div class="field" id ="compute_lot_size_dialog_wrapper_lot_size_for_account_b">
+                      <label>Lot size for  <i id="compute_lot_size_dialog_label_lot_size_for_account_b">${accountB.broker}, ${accountB.account_number}</i></label>
+                      <input oninput="onComputeLotSizeChange(this)" id="compute_lot_size_dialog_lot_size_for_account_b" type="number" min="0" data-broker="${accountB.broker}" data-account-number="${accountB.account_number}">
+                  </div>
+              </div>
+
+              
+              <div class="two fields">
+                  <div class="field" id ="compute_lot_size_dialog_wrapper_sl_pips_for_account_a">
+                      <label>SL pips for <i id="compute_lot_size_dialog_label_sl_pips_for_account_a">${accountA.broker}, ${accountA.account_number}</i></label>
+                      <input oninput="onComputeSLPipsChange(this)" id="compute_lot_size_dialog_sl_pips_for_account_a" type="number" min="0" data-broker="${accountA.broker}" data-account-number="${accountA.account_number}">
+                  </div>
+                  <div class="field" id ="compute_lot_size_dialog_wrapper_sl_pips_for_account_b">
+                      <label>SL pips for  <i id="compute_lot_size_dialog_label_sl_pips_for_account_b">${accountB.broker}, ${accountB.account_number}</i></label>
+                      <input oninput="onComputeSLPipsChange(this)" id="compute_lot_size_dialog_sl_pips_for_account_b" type="number" min="0" data-broker="${accountB.broker}" data-account-number="${accountB.account_number}">
+                  </div>
+              </div>
+
+              <div class="two fields">
+                <div class="field">                      
+                  <label><pre style="display: inline;">spread cost             : </pre><strong id="compute_lot_size_dialog_label_spread_cost_for_account_a"></strong></label>                      
+                  <label><pre style="display: inline;">commssion               : </pre><strong id="compute_lot_size_dialog_label_commission_for_account_a"></strong></label>                      
+                  <label><pre style="display: inline;">swap cost per day       : </pre><strong id="compute_lot_size_dialog_label_swap_cost_per_day_for_account_a"></strong></label>                                            
+                  <label><pre style="display: inline;">profit                  : </pre><strong id="compute_lot_size_dialog_label_profit_for_account_a"></strong></label>
+                  <label><pre style="display: inline;">crash balance           : </pre><strong id="compute_lot_size_dialog_label_crash_balance_for_account_a"></strong> <i id="compute_lot_size_dialog_label_negative_balance_protection_for_account_a" style="font-size:10px; margin-left: 10px;">(-ve bal. protection)</i></label>
+                  <label><pre style="display: inline;">win balance             : </pre><strong id="compute_lot_size_dialog_label_win_balance_for_account_a"></strong></label>
+                  <label><pre style="display: inline;">Theoritical Net balance : </pre><strong id="compute_lot_size_dialog_label_theoritical_net_balance_for_account_a"></strong></label>
+                  <label><pre style="display: inline;">Actual Net balance      : </pre><strong id="compute_lot_size_dialog_label_actual_net_balance_for_account_a"></strong></label>
+                </div>
+                <div class="field">                      
+                  <label><pre style="display: inline;">spread cost             : </pre><strong id="compute_lot_size_dialog_label_spread_cost_for_account_b"></strong></label>                      
+                  <label><pre style="display: inline;">commssion               : </pre><strong id="compute_lot_size_dialog_label_commission_for_account_b"></strong></label>
+                  <label><pre style="display: inline;">swap cost per day       : </pre><strong id="compute_lot_size_dialog_label_swap_cost_per_day_for_account_b"></strong></label>                      
+                  <label><pre style="display: inline;">profit                  : </pre><strong id="compute_lot_size_dialog_label_profit_for_account_b"></strong></label>
+                  <label><pre style="display: inline;">crash balance           : </pre><strong id="compute_lot_size_dialog_label_crash_balance_for_account_b"></strong> <i id="compute_lot_size_dialog_label_negative_balance_protection_for_account_b" style="font-size:10px; margin-left: 10px;">(-ve bal. protection)</i></label>
+                  <label><pre style="display: inline;">win balance             : </pre><strong id="compute_lot_size_dialog_label_win_balance_for_account_b"></strong></label>
+                  <label><pre style="display: inline;">Theoritical net balance : </pre><strong id="compute_lot_size_dialog_label_theoritical_net_balance_for_account_b"></strong></label>
+                  <label><pre style="display: inline;">Actual net balance      : </pre><strong id="compute_lot_size_dialog_label_actual_net_balance_for_account_b"></strong></label>
+                </div>
+              </div>
+
+              <hr/>
+              <div class="field">
+                <label>NOTE:</label>
+                <label>Theoritical net balance is the sum of the account balance, win balance of one acccount and the crash balance of the other - spread and commission cost not included</label>
+                <label>Actual net balance is the sum of the account balance, win balance of one account and the crash balance of the other, <i>less</i> spread and commission cost</label>
+              </div>
+          </form>`;
+}
+
+function onComputeLotSizeChange(el){
+  sendComputeSlPipsLot(el, 'lot')
+}
+
+function onComputeSLPipsChange(el){
+  sendComputeSlPipsLot(el, 'sl')
+}
+
+function sendComputeSlPipsLot(el, type){
+  var obj = {
+    broker: el.dataset.broker,
+    account_number: el.dataset.accountNumber
+  }
+
+
+  
+  var account_for_buy_value = $("#place_order_dialog_accounts").dropdown(
+    "get value"
+  );
+
+  if (!account_for_buy_value) {
+    alertBox("Invalid", "Please select account for buy side!");
+    return false;
+  }
+
+  var split = account_for_buy_value.split(",");
+  var broker_buy = split[0].trim();
+  var account_number_buy = split[1].trim();
+
+  var account = getAccount(obj.broker, obj.account_number);
+
+  if(account.broker === broker_buy && account.account_number === account_number_buy){
+    obj.position = 'BUY';
+  }else { //NOTE: Do not use refere ce account.peer here since it may be undefined and cause undefined exception 
+    obj.position = 'SELL';
+  }
+
+  if(type == 'lot'){
+    obj.lot_size = el.value;
+  }else if(type === 'sl'){
+    obj.stoploss_pips = el.value;
+  }
+  
+  ipc.send("compute-lot-stoploss-loss-at-stopout", obj);
+}
+
 function generalSymbol(accountA, accountB) {
+
   for (var symbol in AppConfig.symbol) {
     var symbolsObj = AppConfig.symbol[symbol];
     if (
-      symbolsObj[accountA.broker] == accountA.chart_symbol &&
-      symbolsObj[accountB.broker] == accountB.chart_symbol
+      (symbolsObj[accountA.broker]?.[accountA.account_number] === accountA.chart_symbol || symbolsObj[accountA.broker]?.[accountA.account_number]['symbol'] === accountA.chart_symbol)
+       && (symbolsObj[accountB.broker]?.[accountB.account_number] === accountB.chart_symbol || symbolsObj[accountB.broker]?.[accountB.account_number]['symbol'] === accountB.chart_symbol)
     ) {
       return symbol;
     }
@@ -1220,76 +1528,159 @@ function OnTriggerSelected(el) {
   }
 }
 
-function OnAutoLotSizeSuccess(obj) {
+function OnLotStoplossAndLossAtStopoutResult(obj){
+
+
   var broker_a = document.getElementById(
-    "place_order_dialog_lot_size_for_account_a"
+    "compute_lot_size_dialog_lot_size_for_account_a"
   ).dataset.broker;
   var account_number_a = document.getElementById(
-    "place_order_dialog_lot_size_for_account_a"
+    "compute_lot_size_dialog_lot_size_for_account_a"
   ).dataset.accountNumber;
 
   var broker_b = document.getElementById(
-    "place_order_dialog_lot_size_for_account_b"
+    "compute_lot_size_dialog_lot_size_for_account_b"
   ).dataset.broker;
   var account_number_b = document.getElementById(
-    "place_order_dialog_lot_size_for_account_b"
+    "compute_lot_size_dialog_lot_size_for_account_b"
   ).dataset.accountNumber;
 
-  if (
-    broker_a != obj.account_a.broker ||
-    account_number_a != obj.account_a.account_number ||
-    broker_b != obj.account_b.broker ||
-    account_number_b != obj.account_b.account_number
-  ) {
-    alertBox(
-      "Rejected",
-      "Account selection has change! auto lot size rejected."
-    );
-    return;
+  if(obj.account.broker === broker_a 
+    && obj.account.account_number === account_number_a){
+
+      if(parseFloat(obj.lot_size) < 0){
+        $('#compute_lot_size_dialog_wrapper_lot_size_for_account_a').addClass('error');
+      }else{
+        $('#compute_lot_size_dialog_wrapper_lot_size_for_account_a').removeClass('error');
+      }
+    
+      if(parseFloat(obj.stoploss_pips) < 0){
+        $('#compute_lot_size_dialog_wrapper_sl_pips_for_account_a').addClass('error');
+      }else{
+        $('#compute_lot_size_dialog_wrapper_sl_pips_for_account_a').removeClass('error');
+      }    
+
+      document.getElementById("compute_lot_size_dialog_lot_size_for_account_a").value = obj.lot_size;
+      document.getElementById("compute_lot_size_dialog_sl_pips_for_account_a").value = obj.stoploss_pips;
+
+      document.getElementById("compute_lot_size_dialog_label_spread_cost_for_account_a").innerHTML = obj.spread_cost;
+      document.getElementById("compute_lot_size_dialog_label_commission_for_account_a").innerHTML = obj.is_commission_known ? obj.commission : 'unknown';
+      document.getElementById("compute_lot_size_dialog_label_commission_for_account_a").style.fontStyle = obj.is_commission_known ? 'normal' : 'italic';
+      document.getElementById("compute_lot_size_dialog_label_crash_balance_for_account_a").innerHTML = obj.crash_balance < 0 ? 0 : obj.crash_balance;
+      document.getElementById("compute_lot_size_dialog_label_negative_balance_protection_for_account_a").style.visibility = obj.crash_balance < 0 ? 'visible' : 'hidden';
+      document.getElementById("compute_lot_size_dialog_label_swap_cost_per_day_for_account_a").innerHTML = obj.swap_cost_per_day;
+            
   }
 
-  if (
-    document.getElementById("place_order_dialog_use_auto_computed_lot_size")
-      .checked
-  ) {
-    document.getElementById("place_order_dialog_lot_size_for_account_a").value =
-      obj.lot_size_a;
-    document.getElementById("place_order_dialog_lot_size_for_account_b").value =
-      obj.lot_size_b;
-  }
-}
+  
+  if(obj.account.broker === broker_b 
+    && obj.account.account_number === account_number_b){
 
-function autoLotSize(symbol) {
-  var broker_a = document.getElementById(
-    "place_order_dialog_lot_size_for_account_a"
-  ).dataset.broker;
-  var account_number_a = document.getElementById(
-    "place_order_dialog_lot_size_for_account_a"
-  ).dataset.accountNumber;
+      if(parseFloat(obj.lot_size) < 0){
+        $('#compute_lot_size_dialog_wrapper_lot_size_for_account_b').addClass('error');
+      }else{
+        $('#compute_lot_size_dialog_wrapper_lot_size_for_account_b').removeClass('error');
+      }
+    
+      if(parseFloat(obj.stoploss_pips) < 0){
+        $('#compute_lot_size_dialog_wrapper_sl_pips_for_account_b').addClass('error');
+      }else{
+        $('#compute_lot_size_dialog_wrapper_sl_pips_for_account_b').removeClass('error');
+      }    
 
-  var broker_b = document.getElementById(
-    "place_order_dialog_lot_size_for_account_b"
-  ).dataset.broker;
-  var account_number_b = document.getElementById(
-    "place_order_dialog_lot_size_for_account_b"
-  ).dataset.accountNumber;
+      document.getElementById("compute_lot_size_dialog_lot_size_for_account_b").value = obj.lot_size;
+      document.getElementById("compute_lot_size_dialog_sl_pips_for_account_b").value = obj.stoploss_pips;
+      
+      document.getElementById("compute_lot_size_dialog_label_spread_cost_for_account_b").innerHTML = obj.spread_cost;
+      document.getElementById("compute_lot_size_dialog_label_commission_for_account_b").innerHTML = obj.is_commission_known ? obj.commission : 'unknown';
+      document.getElementById("compute_lot_size_dialog_label_commission_for_account_b").style.fontStyle = obj.is_commission_known ? 'normal' : 'italic';      
+      document.getElementById("compute_lot_size_dialog_label_crash_balance_for_account_b").innerHTML = obj.crash_balance < 0 ? 0 : obj.crash_balance;
+      document.getElementById("compute_lot_size_dialog_label_negative_balance_protection_for_account_b").style.visibility = obj.crash_balance < 0 ? 'visible' : 'hidden';
+      document.getElementById("compute_lot_size_dialog_label_swap_cost_per_day_for_account_b").innerHTML = obj.swap_cost_per_day;
 
-  var account_a = getAccount(broker_a, account_number_a);
-  var account_b = getAccount(broker_b, account_number_b);
-
-  if (!symbol) {
-    symbol = document.getElementById("place_order_dialog_symbols").value;
   }
 
-  ipc.send("auto-compute-lot-size", {
-    account_a: account_a,
-    account_b: account_b,
-    symbol: symbol, //for now this is not neccessary
-  });
-}
 
-function onSelectPlaceOrderSymbol(el) {
-  autoLotSize(el.value);
+  var stoploss_pips_a = document.getElementById("compute_lot_size_dialog_sl_pips_for_account_a").value || 0;
+  var stoploss_pips_b = document.getElementById("compute_lot_size_dialog_sl_pips_for_account_b").value || 0;
+  
+  var lot_size_a = document.getElementById("compute_lot_size_dialog_lot_size_for_account_a").value || 0;
+  var lot_size_b = document.getElementById("compute_lot_size_dialog_lot_size_for_account_b").value || 0;
+
+  var target_profit_a = parseFloat((lot_size_a * stoploss_pips_b).toFixed(2)); 
+  var target_profit_b = parseFloat((lot_size_b * stoploss_pips_a).toFixed(2)); 
+
+  document.getElementById("compute_lot_size_dialog_label_profit_for_account_a").innerHTML = target_profit_a;
+
+  
+  document.getElementById("compute_lot_size_dialog_label_profit_for_account_b").innerHTML = target_profit_b;
+
+  var crash_balance_a = (document.getElementById("compute_lot_size_dialog_label_crash_balance_for_account_a").innerHTML - 0) || 0;
+  var crash_balance_b = (document.getElementById("compute_lot_size_dialog_label_crash_balance_for_account_b").innerHTML - 0) || 0;
+
+  var spread_cost_a = (document.getElementById("compute_lot_size_dialog_label_spread_cost_for_account_a").innerHTML - 0) || 0;
+  var spread_cost_b = (document.getElementById("compute_lot_size_dialog_label_spread_cost_for_account_b").innerHTML - 0) || 0;
+
+  var total_spread_cost = spread_cost_a + spread_cost_b;
+
+  var commission_a = document.getElementById("compute_lot_size_dialog_label_commission_for_account_a").innerHTML;
+  commission_a = isNaN(commission_a) ? 0 : (commission_a - 0);
+  var commission_b = document.getElementById("compute_lot_size_dialog_label_commission_for_account_b").innerHTML;
+  commission_b = isNaN(commission_b) ? 0 : (commission_b - 0);
+
+  var total_commission = commission_a + commission_b;
+
+  if(obj.account.broker === broker_a 
+    && obj.account.account_number === account_number_a){
+        document.getElementById("compute_lot_size_dialog_label_win_balance_for_account_a").innerHTML = parseFloat((obj.account.account_balance + target_profit_a).toFixed(2));
+        document.getElementById("compute_lot_size_dialog_label_theoritical_net_balance_for_account_a").innerHTML = parseFloat((obj.account.account_balance + target_profit_a + crash_balance_b).toFixed(2));
+        document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_a").innerHTML = parseFloat((obj.account.account_balance + target_profit_a + crash_balance_b - Math.abs(total_spread_cost)).toFixed(2) - Math.abs(total_commission).toFixed(2));
+        
+    }
+
+  if(obj.account.peer.broker === broker_a 
+    && obj.account.peer.account_number === account_number_a){
+          document.getElementById("compute_lot_size_dialog_label_win_balance_for_account_a").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_a).toFixed(2));
+          document.getElementById("compute_lot_size_dialog_label_theoritical_net_balance_for_account_a").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_a + crash_balance_b).toFixed(2));
+          document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_a").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_a + crash_balance_b - Math.abs(total_spread_cost)).toFixed(2) - Math.abs(total_commission).toFixed(2));
+    }
+
+
+  if(obj.account.broker === broker_b 
+    && obj.account.account_number === account_number_b){
+          document.getElementById("compute_lot_size_dialog_label_win_balance_for_account_b").innerHTML = parseFloat((obj.account.account_balance + target_profit_b).toFixed(2));
+          document.getElementById("compute_lot_size_dialog_label_theoritical_net_balance_for_account_b").innerHTML = parseFloat((obj.account.account_balance + target_profit_b + crash_balance_a).toFixed(2));
+          document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_b").innerHTML = parseFloat((obj.account.account_balance + target_profit_b + crash_balance_a - Math.abs(total_spread_cost)).toFixed(2) - Math.abs(total_commission).toFixed(2));
+    }
+  
+  if(obj.account.peer.broker === broker_b 
+    && obj.account.peer.account_number === account_number_b){
+          document.getElementById("compute_lot_size_dialog_label_win_balance_for_account_b").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_b).toFixed(2));
+          document.getElementById("compute_lot_size_dialog_label_theoritical_net_balance_for_account_b").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_b + crash_balance_a).toFixed(2));
+          document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_b").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_b + crash_balance_a - Math.abs(total_spread_cost)).toFixed(2) - Math.abs(total_commission).toFixed(2));
+    }
+  
+    var actual_balance_a = (document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_a").innerHTML - 0) || 0 ;
+    var actual_balance_b = (document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_b").innerHTML - 0) || 0;
+  
+    var total_initial_balance = obj.account.account_balance + obj.account.peer.account_balance;
+
+    if(actual_balance_a > total_initial_balance){
+      document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_a").style.color = 'teal';
+    }
+    
+    if(actual_balance_a < total_initial_balance){
+      document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_a").style.color = 'red';
+    }
+
+    if(actual_balance_b > total_initial_balance){
+      document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_b").style.color = 'teal';
+    }
+    
+    if(actual_balance_b < total_initial_balance){
+      document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_b").style.color = 'red';
+    }
+
 }
 
 function onSelectAuthType(el) {
@@ -1433,14 +1824,14 @@ function placeOrderDropdownSymbolsHTML() {
   return html;
 }
 
-function getPeerBroker(broker) {
+function getPeerAccount(broker, account_number) {
   for (var n in paired_accounts) {
     var pair = paired_accounts[n];
-    if (pair[0].broker == broker) {
-      return pair[1].broker;
+    if (pair[0].broker == broker && pair[0].account_number == account_number) {
+      return pair[1];
     }
-    if (pair[1].broker == broker) {
-      return pair[0].broker;
+    if (pair[1].broker == broker && pair[1].account_number == account_number) {
+      return pair[0];
     }
   }
 }
@@ -1546,7 +1937,20 @@ function SaveConfigSymbol() {
           continue;
         }
 
-        rel_broker_symbols[general_symbol][td.dataset.broker] = value;
+        if(!rel_broker_symbols[general_symbol][td.dataset.broker]){
+          rel_broker_symbols[general_symbol][td.dataset.broker] = {}
+        }
+
+        if(!rel_broker_symbols[general_symbol][td.dataset.broker][td.dataset.accountNumber]){
+          rel_broker_symbols[general_symbol][td.dataset.broker][td.dataset.accountNumber] = {}
+        }
+
+        if(typeof td.dataset.relativeSymbol !== 'undefined'){
+          rel_broker_symbols[general_symbol][td.dataset.broker][td.dataset.accountNumber]['symbol'] = value;
+        }else if (typeof td.dataset.allowableEntrySpread !== 'undefined'){
+          rel_broker_symbols[general_symbol][td.dataset.broker][td.dataset.accountNumber]['allowable_entry_spread'] = value;
+        }
+        
       }
     }
   }
@@ -1565,9 +1969,6 @@ function SaveConfigSymbol() {
 function SaveSettings() {
   var only_pair_live_accounts_with_same_account_name = document.getElementById(
     "only_pair_live_accounts_with_same_account_name"
-  ).checked;
-  var show_waning_message_if_loss_is_possible = document.getElementById(
-    "show_waning_message_if_loss_is_possible"
   ).checked;
   var sync_check_interval_in_seconds = document.getElementById(
     "sync_check_interval_in_seconds"
@@ -1590,8 +1991,6 @@ function SaveSettings() {
   //modify
   app_config["only_pair_live_accounts_with_same_account_name"] =
     only_pair_live_accounts_with_same_account_name;
-  app_config["show_waning_message_if_loss_is_possible"] =
-    show_waning_message_if_loss_is_possible;
   app_config["sync_check_interval_in_seconds"] = sync_check_interval_in_seconds;
   app_config["maximum_log_records"] = maximum_log_records;
   app_config["refresh_account_info_interval_in_seconds"] =
@@ -1613,8 +2012,6 @@ function displayGeneralSettings(saved) {
   document.getElementById(
     "only_pair_live_accounts_with_same_account_name"
   ).checked = AppConfig["only_pair_live_accounts_with_same_account_name"];
-  document.getElementById("show_waning_message_if_loss_is_possible").checked =
-    AppConfig["show_waning_message_if_loss_is_possible"];
   document.getElementById("sync_check_interval_in_seconds").value =
     AppConfig["sync_check_interval_in_seconds"];
   document.getElementById("maximum_log_records").value =
@@ -2141,18 +2538,19 @@ function orderMetricsTableContent(order) {
 }
 
 function symbolsConfigurationHTML(edit, add, saved) {
+  var accounts = getAllAccounts();
   var brokers = getAllBroker();
   var rows;
   var td = "";
 
-  for (var k in brokers) {
-    td += `<td  class="definition">${brokers[k]}</td>`;
+  for (var k in accounts) {
+    td += `<td  class="definition" colspan='2'>${accounts[k].broker}<br/>${accounts[k].account_number}</td>`;
   }
 
   var head_row = `<tr>
                          <td rowspan="2">Symbol</td>
                          <td  class="definition" rowspan="2">Spread</td>   
-                         <td class="definition" colspan="${brokers.length}">Brokers Relative Symbols</td>
+                         <td class="definition" colspan="${accounts.length * 2}">Brokers Relative Symbols / Allowable Entry Spread (to control spread cost)</td>
                     </tr>
                     <tr>
                         ${td}
@@ -2169,16 +2567,32 @@ function symbolsConfigurationHTML(edit, add, saved) {
       true
     )}</td><td>${spreadCell(spread, edit, true)}</td>`;
 
-    for (var k in brokers) {
+    for (var k in accounts) {
       var relative_symbol = "";
-      var broker = brokers[k];
-      if (AppConfig.symbol[i][broker]) {
-        relative_symbol = AppConfig.symbol[i][broker];
+      var relative_allowable_entry_spread = "";
+      var account = accounts[k];
+      
+      var relativeBrokerProp = AppConfig.symbol[i][account.broker]?.[account.account_number];
+
+      if (typeof relativeBrokerProp === 'string') {
+        //support for old configuration
+        relative_symbol = relativeBrokerProp; 
+      }else if (typeof relativeBrokerProp === 'object'){
+        //using new configuration
+        relative_symbol = relativeBrokerProp['symbol']
+        relative_allowable_entry_spread = relativeBrokerProp['allowable_entry_spread']
       }
-      td += `<td data-broker='${broker}'>${symbolCell(
+
+      td += `<td data-broker='${account.broker}' data-account-number='${account.account_number}' data-relative-symbol >${symbolCell(
         relative_symbol,
         edit
       )}</td>`;
+      
+      td += `<td data-broker='${account.broker}' data-account-number='${account.account_number}' data-allowable-entry-spread >${allowableEntrySpreadCell(
+        relative_allowable_entry_spread,
+        edit,
+        true
+      )}</td>`;//new
     }
 
     body_rows += `<tr class='center-content-symbols-configuration-row'>${td}</tr>`;
@@ -2190,9 +2604,10 @@ function symbolsConfigurationHTML(edit, add, saved) {
       true,
       true
     )}</td><td>${spreadCell("", true, true)}</td>`;
-    for (var k in brokers) {
-      var broker = brokers[k];
-      td += `<td data-broker='${broker}'>${symbolCell("", true)}</td>`;
+    for (var k in accounts) {
+      var account = accounts[k];
+      td += `<td data-broker='${account.broker}'  data-account-number='${account.account_number}' data-relative-symbol >${symbolCell("", true)}</td>`;
+      td += `<td data-broker='${account.broker}'  data-account-number='${account.account_number}' data-allowable-entry-spread >${allowableEntrySpreadCell("", true, true)}</td>`;//new
     }
     body_rows += `<tr class='center-content-symbols-configuration-row'>${td}</tr>`;
   }
@@ -2219,7 +2634,7 @@ function symbolsConfigurationHTML(edit, add, saved) {
                          </tbody>
                          <tfoot>
                               <tr>
-                                <th colspan="${brokers.length + 2}"></th>
+                                <th colspan="${accounts.length * 2 + 2}"></th>
                               </tr>
                          </tfoot>   
                     </table>
@@ -2269,6 +2684,10 @@ function symbolCell(symbol, edit, base) {
     ? ` style="${base_style}"`
     : `readonly ="readonly" style="${base_style} border:none; outline: none; color: inherit; background: inherit; font-weight: inherit; font-size: inherit; font-style: inherit;"`;
   return `<input type="text" ${edit_include} value ='${symbol}'/>`;
+}
+
+function allowableEntrySpreadCell(spread, edit, base) {
+  return spreadCell(spread, edit, base);
 }
 
 function spreadCell(spread, edit, base) {
@@ -2900,8 +3319,10 @@ function RefreshSync() {
 function refreshPairedTable() {
   pair = currentPair();
   var html = pairedAccountHTML(pair);
-  if (html) {
+  
+  if (html && prevPairedTableHTML != html) {
     document.getElementById("center_content_main").innerHTML = html;
+    prevPairedTableHTML = html; //save the html to reduce update frequency
   }
 }
 
@@ -2922,17 +3343,46 @@ function refreshActionList() {
   }
 }
 
+function getAllAccounts() {
+  var accounts = [];
+  for (var n in paired_accounts) {
+    var accountA = paired_accounts[n][0];
+    var accountB = paired_accounts[n][1];
+
+    if (accounts.findIndex((acct) => accountA.broker == acct.broker 
+                            && accountA.account_number == acct.account_number) == -1) {
+      accounts.push(accountA);
+    }
+
+    if (accounts.findIndex((acct) => accountB.broker == acct.broker 
+                          && accountB.account_number == acct.account_number) == -1) {
+      accounts.push(accountB);
+    }
+  }
+
+  for (var n in unpaired_accounts) {
+    var account = unpaired_accounts[n];
+
+    if (accounts.findIndex((acct) => account.broker == acct.broker 
+                            && account.account_number == acct.account_number) == -1) {
+      accounts.push(account);
+    }
+  }
+
+  return accounts;
+}
+
 function getAllBroker() {
   var brokers = [];
   for (var n in paired_accounts) {
     var brokerA = paired_accounts[n][0].broker;
     var brokerB = paired_accounts[n][1].broker;
 
-    if (brokers.findIndex((obj) => brokerA == obj.broker) == -1) {
+    if (brokers.findIndex((b) => brokerA == b) == -1) {
       brokers.push(brokerA);
     }
 
-    if (brokers.findIndex((obj) => brokerB == obj.broker) == -1) {
+    if (brokers.findIndex((b) => brokerB == b) == -1) {
       brokers.push(brokerB);
     }
   }
@@ -2940,7 +3390,7 @@ function getAllBroker() {
   for (var n in unpaired_accounts) {
     var broker = unpaired_accounts[n].broker;
 
-    if (brokers.findIndex((obj) => broker == obj.broker) == -1) {
+    if (brokers.findIndex((b) => broker == b) == -1) {
       brokers.push(broker);
     }
   }

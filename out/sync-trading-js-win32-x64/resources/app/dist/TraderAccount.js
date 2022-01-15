@@ -107,7 +107,12 @@ var TraderAccount = /** @class */ (function () {
     };
     TraderAccount.prototype.Peer = function () { return this.peer; };
     ;
-    TraderAccount.prototype.RemovePeer = function () { return this.peer = null; };
+    TraderAccount.prototype.RemovePeer = function () {
+        if (!this.peer)
+            return;
+        this.SendData(SyncUtil_1.SyncUtil.UnpairedNotificationPacket(this.peer.broker, this.peer.account_number));
+        return this.peer = null;
+    };
     ;
     TraderAccount.prototype.Version = function () { return this.version; };
     ;

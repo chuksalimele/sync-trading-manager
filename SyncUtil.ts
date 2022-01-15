@@ -138,24 +138,38 @@ export class SyncUtil {
 
     }
 
-    public static SyncPlackeOrderPacket(placement: OrderPlacement, broker: string) {
-        return SyncUtil.PlackeOrderPacket(placement, broker, 'sync_place_order');
+    public static UnpairedNotificationPacket(peer_broker: string, peer_account_number: string) {
+        return `peer_broker=${peer_broker}${Constants.TAB}`
+        +`peer_account_number=${peer_account_number}${Constants.TAB}`
+        +`action=unpaired_notification`;
     }
 
-    public static SyncPlackeValidateOrderPacket(placement: OrderPlacement, broker: string) {
-        return SyncUtil.PlackeOrderPacket(placement, broker, 'sync_validate_place_order');       
+    public static CommandPacket(command: string, command_id: string, prop: object){
+        var packet = "";
+        for(var n in prop){
+            packet +=`${n}=${prop[n]}${Constants.TAB}`
+        }
+        return`${packet}command_id=${command_id}${Constants.TAB}command=${command}`;    
     }
 
-    public static PlackeOrderPacket(placement: OrderPlacement, broker: string, action: string) {
+    public static SyncPlackeOrderPacket(placement: OrderPlacement, broker: string, account_number: string) {
+        return SyncUtil.PlackeOrderPacket(placement, broker, account_number, 'sync_place_order');
+    }
+
+    public static SyncPlackeValidateOrderPacket(placement: OrderPlacement, broker: string, account_number: string) {
+        return SyncUtil.PlackeOrderPacket(placement, broker, account_number, 'sync_validate_place_order');       
+    }
+
+    public static PlackeOrderPacket(placement: OrderPlacement, broker: string, account_number:string, action: string) {
         return `uuid=` + placement.paired_uuid + Constants.TAB
             + `symbol=` + placement.symbol + Constants.TAB
-            + `relative_symbol=` + SyncUtil.GetRelativeSymbol(placement.symbol, broker) + Constants.TAB
+            + `relative_symbol=` + SyncUtil.GetRelativeSymbol(placement.symbol, broker, account_number) + Constants.TAB
             + `position=` + placement.position + Constants.TAB
             + `lot_size=` + placement.lot_size + Constants.TAB
             + `action=` + action;
     }
 
-    public static SyncCopyPacket(order: Order, trade_copy_type: string, broker: string): string {
+    public static SyncCopyPacket(order: Order, trade_copy_type: string, broker: string, account_number: string): string {
 
         if (order.ticket == -1 &&
             order.position == undefined &&
@@ -172,7 +186,7 @@ export class SyncUtil {
             + `stoploss=` + order.target + Constants.TAB//yes, stoploss becomes the target of the sender - according to the strategy
             + `symbol=` + order.symbol + Constants.TAB
             + `raw_symbol=` + order.raw_symbol + Constants.TAB
-            + `relative_symbol=` + SyncUtil.GetRelativeSymbol(order.symbol, broker) + Constants.TAB
+            + `relative_symbol=` + SyncUtil.GetRelativeSymbol(order.symbol, broker, account_number) + Constants.TAB
             + `lot_size=` + order.lot_size + Constants.TAB +
             `trade_copy_type=` + trade_copy_type + Constants.TAB + `action=sync_copy`;
     }
@@ -209,14 +223,32 @@ export class SyncUtil {
         return "ping=pong"
     }
 
-    public static GetRelativeSymbol(symbol: string, broker: string) {
+    public static GetRelativeSymbol(symbol: string, broker: string, account_number: string) {
         var symb_config: Map<string, any> = this.AppConfigMap.get('symbol');
         if (symb_config) {
             var rel_symbols = symb_config[symbol];
             if (rel_symbols) {
-                var symb = rel_symbols[broker];
-                if (symb) {
-                    return symb;
+                var obj = rel_symbols[broker]?.[account_number];
+                if (typeof obj === 'string') {
+                    return obj;//support for old configuration
+                }
+                if (typeof obj === 'object') {
+                    return obj['symbol'];// using new configuration
+                }
+            }
+        }
+
+        return '';
+    }
+
+    public static GetAllowableEntrySpread(symbol: string, broker: string, account_number: string) {
+        var symb_config: Map<string, any> = this.AppConfigMap.get('symbol');
+        if (symb_config) {
+            var allowable_entry_spread = symb_config[symbol];
+            if (allowable_entry_spread) {
+                var obj = allowable_entry_spread[broker]?.[account_number];
+                if (typeof obj === 'object') {
+                    return obj['allowable_entry_spread'];// using new configuration
                 }
             }
         }

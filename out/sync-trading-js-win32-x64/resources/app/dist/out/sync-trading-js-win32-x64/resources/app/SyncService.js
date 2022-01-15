@@ -1282,9 +1282,6 @@ var SyncService = /** @class */ (function () {
             if (name == "account_expected_hedge_profit") {
                 account.SetHedgeProfit(parseFloat(value));
             }
-            if (name == "account_expected_hedge_profit_tomorrow") {
-                account.SetHedgeProfitTomorrow(parseFloat(value));
-            }
             if (name == "error") {
                 error = value;
                 account.SetLastError(error);
@@ -1401,12 +1398,6 @@ var SyncService = /** @class */ (function () {
         var before_swap_time = SyncUtil_1.SyncUtil.AppConfigMap.get("automatically_avoid_loss_due_to_next_day_swap_by_closing_trades_before_swap_time"); // in milliseconds already
         if (!before_swap_time || before_swap_time <= 0) {
             return; //not set - so leave
-        }
-        if (account.HedgeProfitTomorrow() > 0) {
-            return;
-        }
-        if (account.Peer() && account.Peer().HedgeProfitTomorrow() > 0) {
-            return;
         }
         var GMT = 2; //We are using GMT+2
         var swap_time = new Date().setUTCHours(24 + GMT); //the time swap is charged tomorrow

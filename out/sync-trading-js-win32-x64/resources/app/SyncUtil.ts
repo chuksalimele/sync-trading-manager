@@ -138,6 +138,12 @@ export class SyncUtil {
 
     }
 
+    public static UnpairedNotificationPacket(peer_broker: string, peer_account_number: string) {
+        return `peer_broker=${peer_broker}${Constants.TAB}`
+        +`peer_account_number=${peer_account_number}${Constants.TAB}`
+        +`action=unpaired_notification`;
+    }
+
     public static SyncPlackeOrderPacket(placement: OrderPlacement, broker: string) {
         return SyncUtil.PlackeOrderPacket(placement, broker, 'sync_place_order');
     }

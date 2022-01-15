@@ -104,6 +104,11 @@ var SyncUtil = /** @class */ (function () {
             console.error(e);
         }
     };
+    SyncUtil.UnpairedNotificationPacket = function (peer_broker, peer_account_number) {
+        return "peer_broker=" + peer_broker + Constants_1.Constants.TAB
+            + ("peer_account_number=" + peer_account_number + Constants_1.Constants.TAB)
+            + "action=unpaired_notification";
+    };
     SyncUtil.SyncPlackeOrderPacket = function (placement, broker) {
         return SyncUtil.PlackeOrderPacket(placement, broker, 'sync_place_order');
     };

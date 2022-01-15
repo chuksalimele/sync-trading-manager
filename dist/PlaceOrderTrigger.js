@@ -13,6 +13,7 @@ var PlaceOrderTrigger = /** @class */ (function () {
         this.max_percent_diff_in_account_balances = 0;
         this.buy_lot_size = 0;
         this.sell_lot_size = 0;
+        this.trade_split_count = 0;
         this.pair_id = ''; //use this to verify if the account are still pair together
         this.remark = '';
         this.uuid = SyncUtil_1.SyncUtil.Unique();

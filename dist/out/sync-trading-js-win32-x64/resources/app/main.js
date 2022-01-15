@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ipcSend = void 0;
 Object.defineProperty(exports, "__esModule", { value: true });
 var app_1 = require("./app");
+var Config_1 = require("./Config");
 var Constants_1 = require("./Constants");
 var PlaceOrderTrigger_1 = require("./PlaceOrderTrigger");
 var SyncUtil_1 = require("./SyncUtil");
@@ -25,7 +26,7 @@ function Main() {
         win = new BrowserWindow({
             width: 1300,
             height: 750,
-            title: 'Sync Trading Manager',
+            title: "Sync Trading Manager v" + Config_1.Config.VERSION,
             webPreferences: {
                 nodeIntegration: true
             }

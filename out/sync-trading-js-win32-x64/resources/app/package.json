@@ -30,38 +30,5 @@
     "mkdirp": "^1.0.4",
     "nodemailer": "^6.5.0"
   },
-  "config": {
-    "forge": {
-      "packagerConfig": {},
-      "makers": [
-        {
-          "name": "@electron-forge/maker-wix",
-          "config": {
-            "description": "This app sync two trading accounts for risk free trading",
-            "exe": "sync-trading-js",
-            "name": "Sync Trading App",
-            "manufacturer": "Chuks Alimele",
-            "version": "1.0.0",
-            "ui": {
-              "chooseDirectory": true
-            }
-          }
-        },
-        {
-          "name": "@electron-forge/maker-zip",
-          "platforms": [
-            "darwin"
-          ]
-        },
-        {
-          "name": "@electron-forge/maker-deb",
-          "config": {}
-        },
-        {
-          "name": "@electron-forge/maker-rpm",
-          "config": {}
-        }
-      ]
-    }
-  }
+  "config": {}
 }

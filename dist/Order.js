@@ -34,6 +34,7 @@ var Order = /** @class */ (function () {
         this.is_copyable = true;
         this.ticket = ticket;
     }
+    Order.prototype.GropuId = function () { return this.group_id; };
     Order.prototype.IsOpen = function () { return this.open_time > 0; };
     Order.prototype.IsClosed = function () { return this.close_time > 0; };
     ;
@@ -67,6 +68,9 @@ var Order = /** @class */ (function () {
     Order.prototype.Spread = function (broker) {
         this.spread = SyncUtil_1.SyncUtil.SymbolSpread(broker, this.raw_symbol, this.point);
         return this.spread > 0 ? this.spread : this.default_spread;
+    };
+    Order.prototype.SetGroupId = function (trade_split_group_id) {
+        this.group_id = trade_split_group_id;
     };
     return Order;
 }());

@@ -126,7 +126,12 @@ export class TraderAccount {
 
     public Peer(): TraderAccount { return this.peer };
 
-    public RemovePeer() { return this.peer = null };
+    public RemovePeer() { 
+        if(!this.peer) return;
+        
+        this.SendData(SyncUtil.UnpairedNotificationPacket(this.peer.broker, this.peer.account_number));
+        return this.peer = null
+    };
 
     public Version(): string { return this.version };
 

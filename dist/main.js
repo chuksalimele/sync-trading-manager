@@ -35,7 +35,7 @@ function Main() {
         win.loadFile(__dirname + "/../index.html");
         win.removeMenu(); //remove the default menu
         // Open the DevTools. 
-        //win.webContents.openDevTools()//UNCOMMENT IN PRODUCTION TO HIDE DEBUGGER VIEW
+        win.webContents.openDevTools(); //UNCOMMENT IN PRODUCTION TO HIDE DEBUGGER VIEW
         //Quit app when main BrowserWindow Instance is closed
         win.on('closed', function () {
             app.quit();
@@ -92,7 +92,7 @@ function Main() {
         var account_buy = service.getTraderAccount(obj.account_buy.broker, obj.account_buy.account_number);
         var account_a = service.getTraderAccount(obj.account_a.broker, obj.account_a.account_number);
         var account_b = service.getTraderAccount(obj.account_b.broker, obj.account_b.account_number);
-        service.SyncPlaceOrders(account_buy, account_a, account_b, obj.symbol, obj.lot_size_a, obj.lot_size_b, obj.max_percent_diff_in_account_balances);
+        service.SyncPlaceOrders(account_buy, account_a, account_b, obj.symbol, obj.lot_size_a, obj.lot_size_b, obj.trade_split_count, obj.max_percent_diff_in_account_balances);
     });
     ipcMain.on('place-order-trigger', function (event, obj) {
         var service = mainApp.GetSyncService();
@@ -108,6 +108,7 @@ function Main() {
         trigger.pivot_price = account_buy.ChartMarketPrice();
         trigger.type = obj.trigger_type;
         trigger.symbol = obj.symbol;
+        trigger.trade_split_count = obj.trade_split_count;
         trigger.max_percent_diff_in_account_balances = obj.max_percent_diff_in_account_balances;
         "<option value=\"Instant now\">Instant now</option>\n                            <option value=\"Instant when both accounts have credit bonuses\">Instant when both accounts have credit bonuses</option>\n                            <option value=\"Pending at price\">Pending at price</option>\n                            <option value=\"Pending at price when both accounts have credit bonuses\">Pending at price when both accounts have credit bonuses</option>\n";
         if (trigger.type == Constants_1.Constants.Pending_at_price
@@ -125,7 +126,9 @@ function Main() {
         if (trigger.type == Constants_1.Constants.Instant_when_both_accounts_have_credit_bonuses) {
             trigger.remark = "The order will be execute immediately when credit bonuses are available for both accounts";
         }
-        service.AddPlaceOrderTrigger(trigger);
+        for (var i = 0; i < obj.trade_split_count; i++) {
+            service.AddPlaceOrderTrigger(trigger);
+        }
     });
     ipcMain.on('cancel-place-order-trigger', function (event, uuid) {
         var service = mainApp.GetSyncService();
@@ -189,33 +192,46 @@ function Main() {
             }
         });
     });
-    ipcMain.on('auto-compute-lot-size', function (event, obj) {
+    ipcMain.on("compute-lot-stoploss-loss-at-stopout", function (event, obj) {
         var service = mainApp.GetSyncService();
-        var account_a = service.getTraderAccount(obj.account_a.broker, obj.account_a.account_number);
-        var account_b = service.getTraderAccount(obj.account_b.broker, obj.account_b.account_number);
-        var symbol = obj.symbol; //for now this is not neccessary
-        var result_a = account_a.AutoLotSize(account_b);
-        var result_b = account_b.AutoLotSize(account_a);
-        if (typeof result_a === 'number' && typeof result_b === 'number') {
-            exports.ipcSend('auto-lot-size-success', {
-                account_a: account_a.Safecopy(),
-                account_b: account_b.Safecopy(),
-                lot_size_a: result_a,
-                lot_size_b: result_b
-            });
+        var account = service.getTraderAccount(obj.broker, obj.account_number);
+        var lot_size;
+        var stoploss_pips; //same as pips at stopout
+        var loss_at_stopout;
+        var spread_cost;
+        var swap_cost_per_day;
+        var crash_balance;
+        var is_commission_known;
+        var commission;
+        if (obj.stoploss_pips > 0) {
+            stoploss_pips = obj.stoploss_pips;
+            lot_size = account.DetermineLotSizefromPips(obj.stoploss_pips);
+            loss_at_stopout = account.DetermineLossAtStopout(obj.position, lot_size);
+            swap_cost_per_day = account.CalculateSwapPerDay(obj.position, lot_size);
+            commission = account.CalculateCommision(lot_size);
         }
-        if (typeof result_a === 'string') {
-            exports.ipcSend('auto-lot-size-fail', {
-                account: account_a.Safecopy(),
-                error: result_a
-            });
+        else if (obj.lot_size > 0) {
+            lot_size = obj.lot_size;
+            stoploss_pips = account.DeterminePipsMoveAtStopout(obj.position, obj.lot_size);
+            loss_at_stopout = account.DetermineLossAtStopout(obj.position, obj.lot_size);
+            swap_cost_per_day = account.CalculateSwapPerDay(obj.position, obj.lot_size);
+            commission = account.CalculateCommision(obj.lot_size);
         }
-        if (typeof result_b === 'string') {
-            exports.ipcSend('auto-lot-size-fail', {
-                account: account_b.Safecopy(),
-                error: result_b
-            });
-        }
+        is_commission_known = account.IsCommisionKnown();
+        spread_cost = account.CalculateSpreadCost(lot_size);
+        crash_balance = parseFloat((account.AccountBalance() - loss_at_stopout).toFixed(2));
+        var result = {
+            account: account.Safecopy(),
+            lot_size: lot_size || '',
+            stoploss_pips: stoploss_pips || '',
+            loss_at_stopout: loss_at_stopout || 0,
+            swap_cost_per_day: swap_cost_per_day || 0,
+            spread_cost: spread_cost || 0,
+            crash_balance: crash_balance || 0,
+            commission: commission || 0,
+            is_commission_known: is_commission_known,
+        };
+        exports.ipcSend('lot-stoploss-loss-at-stopout-result', result);
     });
     ipcMain.on('accept-warning-place-order', function (event, uuid) {
         var service = mainApp.GetSyncService();

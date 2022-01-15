@@ -23,7 +23,6 @@ var TraderAccount = /** @class */ (function () {
         this.account_trade_cost = 0;
         this.chart_market_price = 0; //this is the current market price on the chart where the EA is loaded
         this.hedge_profit = 0;
-        this.hedge_profit_tomorrow = 0;
         this.orders = new Map();
         this.CopyRetryAttempt = new Map();
         this.CloseRetryAttempt = new Map();
@@ -66,7 +65,6 @@ var TraderAccount = /** @class */ (function () {
             account_profit: this.account_profit,
             account_free_margin: this.account_free_margin,
             hedge_profit: this.hedge_profit,
-            hedge_profit_tomorrow: this.hedge_profit_tomorrow,
             chart_symbol: this.chart_symbol,
             chart_market_price: this.chart_market_price,
             platform_type: this.platform_type,
@@ -93,7 +91,6 @@ var TraderAccount = /** @class */ (function () {
                 account_profit: this.peer.account_profit,
                 account_free_margin: this.peer.account_free_margin,
                 hedge_profit: this.peer.hedge_profit,
-                hedge_profit_tomorrow: this.peer.hedge_profit_tomorrow,
                 chart_symbol: this.peer.chart_symbol,
                 chart_market_price: this.peer.chart_market_price,
                 platform_type: this.peer.platform_type,
@@ -110,7 +107,12 @@ var TraderAccount = /** @class */ (function () {
     };
     TraderAccount.prototype.Peer = function () { return this.peer; };
     ;
-    TraderAccount.prototype.RemovePeer = function () { return this.peer = null; };
+    TraderAccount.prototype.RemovePeer = function () {
+        if (!this.peer)
+            return;
+        this.SendData(SyncUtil_1.SyncUtil.UnpairedNotificationPacket(this.peer.broker, this.peer.account_number));
+        return this.peer = null;
+    };
     ;
     TraderAccount.prototype.Version = function () { return this.version; };
     ;
@@ -143,8 +145,6 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.AccountTradeCost = function () { return this.account_trade_cost; };
     ;
     TraderAccount.prototype.HedgeProfit = function () { return this.hedge_profit; };
-    ;
-    TraderAccount.prototype.HedgeProfitTomorrow = function () { return this.hedge_profit_tomorrow; };
     ;
     TraderAccount.prototype.ChartSymbol = function () { return this.chart_symbol; };
     ;
@@ -303,9 +303,6 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.SetHedgeProfit = function (hedge_profit) {
         this.hedge_profit = hedge_profit;
     };
-    TraderAccount.prototype.SetHedgeProfitTomorrow = function (hedge_profit_tomorrow) {
-        this.hedge_profit_tomorrow = hedge_profit_tomorrow;
-    };
     TraderAccount.prototype.SetChartSymbol = function (chart_symbol) {
         this.chart_symbol = chart_symbol;
     };
@@ -414,6 +411,33 @@ var TraderAccount = /** @class */ (function () {
             peer.AccountBalance();
         lot = bigger_acct_bal * risk * factor / 1000;
         return parseFloat(lot.toFixed(2));
+    };
+    TraderAccount.prototype.DetermineLotSizefromPips = function (peer, pips, price, units) {
+        if (this.Peer() == null) {
+            return "Peer cannot be null";
+        }
+        if (this.Peer().StrID() != peer.StrID()) {
+            return "The assign peer for computing auto lot size mismatch";
+        }
+        var stopout_level_in_fraction = this.AccountStopoutLevel() / 100;
+        var urt = price * units * stopout_level_in_fraction;
+        var numerator = this.AccountLeverage() * (this.AccountBalance() + this.AccountCredit());
+        var denumenator = 10 * pips * this.AccountLeverage() + urt;
+        var lot = numerator / denumenator;
+        return parseFloat(lot.toFixed(2));
+    };
+    TraderAccount.prototype.DeterminePossibleProfitfromPips = function (peer, pips, price, units) {
+        if (this.Peer() == null) {
+            return "Peer cannot be null";
+        }
+        if (this.Peer().StrID() != peer.StrID()) {
+            return "The assign peer for computing auto lot size mismatch";
+        }
+        var stopout_level_in_fraction = this.AccountStopoutLevel() / 100;
+        var urt = price * units * stopout_level_in_fraction;
+        var stopout_amount = urt * (this.AccountBalance() + this.AccountCredit()) / (10 * pips * this.AccountLeverage() + urt);
+        var possible_profit = this.AccountCredit() - stopout_amount;
+        return parseFloat(possible_profit.toFixed(2));
     };
     /**
      *This method will be used to position each peer in the appropriate column when pairing for consistent access location

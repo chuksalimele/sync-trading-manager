@@ -275,15 +275,6 @@
                             </div>
                         </div>
 
-
-                        <div class="inline fields">
-                            <div class="ui checkbox">
-                                <input id="show_waning_message_if_loss_is_possible" type="checkbox" tabindex="0">
-                                <label style="width: 300px;">Show waning message if loss is possible</label>
-                            </div>
-                        </div>
-
-
                         <div class="inline fields">
                             <div class="sixteen wide field">
                                 <label style="width: 300px;">Automatically avoid loss due to tomorrow swap by closing trades </label>
@@ -298,8 +289,6 @@
                                 <i style="font-size: small; max-width: 100px; margin-left: 5px;">before swap time</i>
                             </div>
                         </div>
-
-
 
                         <div class="inline fields">
                             <div class="sixteen wide field">
@@ -317,7 +306,7 @@
 
                         <div class="inline fields">
                             <div class="sixteen wide field">
-                                <label style="width: 300px;">Refresh account info_interval in seconds</label>
+                                <label style="width: 300px;">Refresh account info interval in seconds</label>
                                 <input id="refresh_account_info_interval_in_seconds" type="number" max="60" min="5" style="width: 100px; padding: 4px !important;">
                             </div>
                         </div>
@@ -621,19 +610,22 @@
 
                 <div class="field">
                     <label>Symbol</label>
-                    <select id="place_order_dialog_symbols" class="ui fluid selection dropdown" onchange="onSelectPlaceOrderSymbol(this)">
+                    <select id="place_order_dialog_symbols" class="ui fluid selection dropdown" >
                         <option value="">Select</option>
                         <option value="XAUUSD">XAUUSD</option>
                     </select>
                 </div>
-                <div class="field">
-                    <div id="place_order_dialog_use_auto_computed_lot_size_checkbox" class="ui checkbox" style="width: 300px;">
-                        <input id="place_order_dialog_use_auto_computed_lot_size" type="checkbox" checked tabindex="0">
-                        <label>Use auto computed lot size</label>
+
+                <div class="two fields">                        
+                    
+                    <div class="field">
+                        <div class="ui button teal" id="show_compute_lot_size_dialog">
+                            Compute Lot Size
+                        </div>
                     </div>
                 </div>
 
-                <div class="two fields">
+                <div class="three fields">
                     <div class="field">
                         <label>Lot size for <i id="place_order_dialog_label_lot_size_for_account_a"></i></label>
                         <input id="place_order_dialog_lot_size_for_account_a" disabled type="number" min="0" data-broker="" data-account-number="">
@@ -641,6 +633,10 @@
                     <div class="field">
                         <label>Lot size for  <i id="place_order_dialog_label_lot_size_for_account_b"></i></label>
                         <input id="place_order_dialog_lot_size_for_account_b" disabled type="number" min="0" data-broker="" data-account-number="">
+                    </div>
+                    <div class="field">
+                        <label>No. of trades due lot size limit of <i id="place_order_dialog_label_trade_count_due_to_lot_limit"></i></label>
+                        <input id="place_order_dialog_trade_count_due_to_lot_limit" disabled type="number" min="0" data-broker="" data-account-number="">
                     </div>
                 </div>
             </form>
@@ -651,6 +647,7 @@
         </div>
     </div>
 
+    </div>
     <script>
 
 

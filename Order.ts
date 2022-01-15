@@ -3,8 +3,10 @@ import { SyncUtil } from "./SyncUtil";
 
 
 export class Order {
+  
     public ticket: number;
     public peer_ticket: number = -1;//greater than -1 if it is synced
+    public group_id: string; // trade split group id
     public position: string;
     public symbol: string;
     public raw_symbol: string;
@@ -40,6 +42,8 @@ export class Order {
         this.ticket = ticket;
     }
 
+    public GropuId(): string { return this.group_id; }
+
     public IsOpen(): boolean { return this.open_time > 0; }
 
     public IsClosed(): boolean { return this.close_time > 0 };
@@ -57,7 +61,7 @@ export class Order {
     public SyncModifyingStoploss(modifying_stoploss: boolean) { return this.is_sync_modifying_stoploss = modifying_stoploss };   
 
     public IsSyncCopying(): boolean { return this.is_sync_copying };
-
+ 
     /**
      * Sync or own closing
      */
@@ -77,5 +81,9 @@ export class Order {
         this.spread = SyncUtil.SymbolSpread(broker, this.raw_symbol, this.point);
         return this.spread > 0 ? this.spread : this.default_spread;
     }
+
+    SetGroupId(trade_split_group_id: string) {
+        this.group_id = trade_split_group_id;
+      }
 
 }

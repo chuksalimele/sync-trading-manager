@@ -969,10 +969,12 @@ function PlaceOrder() {
           return false;
         }
 
-        if (!AppConfig.spread[symbol] || AppConfig.spread[symbol] <= 0) {
+        if (typeof AppConfig.spread[symbol] === 'undefined'
+         || AppConfig.spread[symbol] === null 
+         || AppConfig.spread[symbol] < 0) {
           alertBox(
             "Invalid",
-            `Spread for ${symbol} must be greater than zero!\nHint: refer to Symbols Configuration to set value greater than zero.`
+            `Spread for ${symbol} must be at least zero!\nHint: refer to Symbols Configuration to set value at least zero.`
           );
           return false;
         }
