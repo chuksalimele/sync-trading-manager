@@ -611,14 +611,9 @@ var TraderAccount = /** @class */ (function () {
             account: this.Safecopy()
         });
     };
-    TraderAccount.prototype.ValidatePlaceOrder = function (symbol, lot_size, max_percent_diff_in_account_balances) {
-        /*deprecated
-        this.SendData(SyncUtil.SyncPlackeValidateOrderPacket(placement, this.broker));
-        ipcSend('sending-validate-place-order', {
-            account: this.Safecopy()
-        });
-        */
+    TraderAccount.prototype.ValidatePlaceOrder = function (symbol, lot_size, max_percent_diff_in_account_balances, is_triggered) {
         if (max_percent_diff_in_account_balances === void 0) { max_percent_diff_in_account_balances = Infinity; }
+        if (is_triggered === void 0) { is_triggered = false; }
         var valid = false;
         var perecent = 0;
         if (max_percent_diff_in_account_balances >= 0 &&
@@ -628,30 +623,33 @@ var TraderAccount = /** @class */ (function () {
                 this.AccountBalance()) *
                 100);
         }
-        /*if(!this.TerminalConnected()){//REMIND: UNCOMMENT LATER AFTER TESTING!!! - SEE BELOW ALSO
-            this.SetLastError("Terminal is disconnected!");
-        }else */ if (this.AccountBalance() <= 0) {
-            this.SetLastError("Not allowed! Account balance must be greater than zero.");
+        var err_prefix = is_triggered ? "Trigger validation error!\n" : "";
+        if (!this.TerminalConnected()) {
+            this.SetLastError(err_prefix + "Terminal is disconnected!");
+        }
+        else if (this.AccountBalance() <= 0) {
+            this.SetLastError(err_prefix + "Not allowed! Account balance must be greater than zero.");
         }
         else if (this.OnlyTradeWithCredit() && this.IsLiveAccount() && this.AccountCredit() == 0) {
-            this.SetLastError("Not allowed for live account! Credit cannot be zero.");
+            this.SetLastError(err_prefix + "Not allowed for live account! Credit cannot be zero.");
         }
         else if (lot_size > this.ChartSymbolMaxLotSize()) {
-            this.SetLastError("Maximum lot size of " + this.ChartSymbolMaxLotSize() + " exceeded! The specified lot size of " + lot_size + " is too big.");
+            this.SetLastError(err_prefix + "Maximum lot size of " + this.ChartSymbolMaxLotSize() + " exceeded! The specified lot size of " + lot_size + " is too big.");
         }
         else if (lot_size < this.ChartSymbolMinLotSize()) {
-            this.SetLastError("Cannot be below mininiun lot size of " + this.ChartSymbolMinLotSize() + ". The specified lot size of " + lot_size + " is too small.");
+            this.SetLastError(err_prefix + "Cannot be below mininiun lot size of " + this.ChartSymbolMinLotSize() + ". The specified lot size of " + lot_size + " is too small.");
         }
         else if (this.IsMarketClosed()) {
-            this.SetLastError("Market is closed!");
-        } /*else if(!this.ChartSymbolTradeAllowed()){// REMIND - UNCOMMENT AFTER TESTING!!!
-            this.SetLastError(`Trade not allowed for ${this.ChartSymbol()}. Check if symbol is disabled or market is closed.`);
-        }*/
+            this.SetLastError(err_prefix + "Market is closed!");
+        }
+        else if (!this.ChartSymbolTradeAllowed()) {
+            this.SetLastError(err_prefix + "Trade not allowed for " + this.ChartSymbol() + ". Check if symbol is disabled or market is closed.");
+        }
         else if (this.ChartSymbol() !== SyncUtil_1.SyncUtil.GetRelativeSymbol(symbol, this.Broker(), this.AccountNumber())) {
-            this.SetLastError("Not allowed! Chart symbol must be same as trade symbol. Symbol on chart is " + this.ChartSymbol() + " while trade is " + symbol);
+            this.SetLastError(err_prefix + "Not allowed! Chart symbol must be same as trade symbol. Symbol on chart is " + this.ChartSymbol() + " while trade is " + symbol);
         }
         else if (perecent > max_percent_diff_in_account_balances) {
-            this.SetLastError("Percent difference in account balance, " + this
+            this.SetLastError(err_prefix + "Percent difference in account balance, " + this
                 .AccountBalance()
                 .toFixed(2) + this.AccountCurrency() + " of [" + this.Broker() + " , " + this.AccountNumber() + "]  from that of " + this.Peer()
                 .AccountBalance()
@@ -664,6 +662,34 @@ var TraderAccount = /** @class */ (function () {
             main_1.ipcSend("validate-place-order-fail", this.Safecopy());
         }
         return valid;
+    };
+    TraderAccount.prototype.IsAllGroupOrdersOpenAnNotClosing = function (own_order, peer_order) {
+        var orders = this.Orders();
+        var own_group_order_open_count = 0;
+        for (var _i = 0, orders_3 = orders; _i < orders_3.length; _i++) {
+            var order = orders_3[_i];
+            if (order.GropuId() === own_order.GropuId()
+                && order.IsOpen() //order must be open
+                && !order.IsClosing() //order must not be in closing state
+            ) {
+                own_group_order_open_count++;
+            }
+        }
+        if (!this.Peer())
+            return false;
+        var peer_orders = this.Peer().Orders();
+        var peer_group_order_open_count = 0;
+        for (var _a = 0, peer_orders_2 = peer_orders; _a < peer_orders_2.length; _a++) {
+            var order = peer_orders_2[_a];
+            if (order.GropuId() === peer_order.GropuId()
+                && order.IsOpen() //order must be open
+                && !order.IsClosing() //order must not be in closing state
+            ) {
+                peer_group_order_open_count++;
+            }
+        }
+        return own_group_order_open_count === own_order.GroupOrderCount()
+            && peer_group_order_open_count === peer_order.GroupOrderCount();
     };
     TraderAccount.prototype.RetrySendPlaceOrderOrForceClosePeer = function (placement) {
         var attempts = this.PlaceOrderRetryAttempt.get(placement.id);
@@ -822,8 +848,8 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.SendCloseToGroup = function (ticket) {
         var orderObj = this.orders.get(ticket);
         var orders = this.Orders();
-        for (var _i = 0, orders_3 = orders; _i < orders_3.length; _i++) {
-            var order = orders_3[_i];
+        for (var _i = 0, orders_4 = orders; _i < orders_4.length; _i++) {
+            var order = orders_4[_i];
             if (orderObj.IsClosed()
                 && orderObj.GropuId() === order.GropuId()
                 && !order.IsClosed()
@@ -858,12 +884,22 @@ var TraderAccount = /** @class */ (function () {
         SyncUtil_1.SyncUtil.LogCloseRetry(this, origin_ticket, peer_ticket, attempts);
     };
     TraderAccount.prototype.SendModify = function (synced_orders) {
+        var is_all_group_orders_open = false;
         for (var _i = 0, synced_orders_2 = synced_orders; _i < synced_orders_2.length; _i++) {
             var paired = synced_orders_2[_i];
             var own_column = this.PairColumnIndex();
             var peer_column = this.peer.PairColumnIndex();
             var own_order = paired[own_column];
             var peer_order = paired[peer_column];
+            //Well before we  send modification we should ensure all the group orders
+            //are open and not in closing state. We don't what the stoploss and target
+            //to be modified when orders are being closed, it is pointless
+            if (!is_all_group_orders_open) {
+                is_all_group_orders_open = this.IsAllGroupOrdersOpenAnNotClosing(own_order, peer_order);
+                if (!is_all_group_orders_open) {
+                    return; //wait till all group orders are open
+                }
+            }
             //skip for those that are already closed or sync modifying of target is in progress
             if (own_order.IsClosed()) {
                 continue;

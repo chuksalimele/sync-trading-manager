@@ -753,14 +753,7 @@ export class TraderAccount {
         });
     }
 
-    ValidatePlaceOrder(symbol: string, lot_size: number, max_percent_diff_in_account_balances: number = Infinity): boolean {
-
-        /*deprecated
-        this.SendData(SyncUtil.SyncPlackeValidateOrderPacket(placement, this.broker));
-        ipcSend('sending-validate-place-order', {
-            account: this.Safecopy()
-        });
-        */
+    ValidatePlaceOrder(symbol: string, lot_size: number, max_percent_diff_in_account_balances: number = Infinity, is_triggered: boolean= false): boolean {
 
         var valid = false;    
 
@@ -778,25 +771,26 @@ export class TraderAccount {
             );
         }
   
+        var err_prefix = is_triggered? "Trigger validation error!\n" : "";
 
-        /*if(!this.TerminalConnected()){//REMIND: UNCOMMENT LATER AFTER TESTING!!! - SEE BELOW ALSO
-            this.SetLastError("Terminal is disconnected!");
-        }else */if(this.AccountBalance() <= 0){
-            this.SetLastError("Not allowed! Account balance must be greater than zero.");
+        if(!this.TerminalConnected()){
+            this.SetLastError(`${err_prefix}Terminal is disconnected!`);
+        }else if(this.AccountBalance() <= 0){
+            this.SetLastError(`${err_prefix}Not allowed! Account balance must be greater than zero.`);
         }else if(this.OnlyTradeWithCredit() && this.IsLiveAccount() && this.AccountCredit() == 0){
-            this.SetLastError("Not allowed for live account! Credit cannot be zero.");
+            this.SetLastError(`${err_prefix}Not allowed for live account! Credit cannot be zero.`);
         }else if(lot_size > this.ChartSymbolMaxLotSize()){
-            this.SetLastError(`Maximum lot size of ${this.ChartSymbolMaxLotSize()} exceeded! The specified lot size of ${lot_size} is too big.`);
+            this.SetLastError(`${err_prefix}Maximum lot size of ${this.ChartSymbolMaxLotSize()} exceeded! The specified lot size of ${lot_size} is too big.`);
         }else if(lot_size < this.ChartSymbolMinLotSize()){
-            this.SetLastError(`Cannot be below mininiun lot size of ${this.ChartSymbolMinLotSize()}. The specified lot size of ${lot_size} is too small.`);
+            this.SetLastError(`${err_prefix}Cannot be below mininiun lot size of ${this.ChartSymbolMinLotSize()}. The specified lot size of ${lot_size} is too small.`);
         }else if(this.IsMarketClosed()){
-            this.SetLastError("Market is closed!");
-        }/*else if(!this.ChartSymbolTradeAllowed()){// REMIND - UNCOMMENT AFTER TESTING!!!
-            this.SetLastError(`Trade not allowed for ${this.ChartSymbol()}. Check if symbol is disabled or market is closed.`);
-        }*/else if(this.ChartSymbol() !== SyncUtil.GetRelativeSymbol(symbol, this.Broker(), this.AccountNumber())){
-            this.SetLastError(`Not allowed! Chart symbol must be same as trade symbol. Symbol on chart is ${this.ChartSymbol()} while trade is ${symbol}`);
+            this.SetLastError(`${err_prefix}Market is closed!`);
+        }else if(!this.ChartSymbolTradeAllowed()){
+            this.SetLastError(`${err_prefix}Trade not allowed for ${this.ChartSymbol()}. Check if symbol is disabled or market is closed.`);
+        }else if(this.ChartSymbol() !== SyncUtil.GetRelativeSymbol(symbol, this.Broker(), this.AccountNumber())){
+            this.SetLastError(`${err_prefix}Not allowed! Chart symbol must be same as trade symbol. Symbol on chart is ${this.ChartSymbol()} while trade is ${symbol}`);
         }else if(perecent > max_percent_diff_in_account_balances){
-            this.SetLastError(`Percent difference in account balance, ${this
+            this.SetLastError(`${err_prefix}Percent difference in account balance, ${this
                 .AccountBalance()
                 .toFixed(
                   2
@@ -818,6 +812,40 @@ export class TraderAccount {
         return valid;
     }
     
+    private IsAllGroupOrdersOpenAnNotClosing(own_order: Order, peer_order: Order): boolean{
+
+        var orders = this.Orders();
+        var own_group_order_open_count = 0;
+
+        for (let order of orders) {
+            if(order.GropuId() === own_order.GropuId() 
+                && order.IsOpen() //order must be open
+                && !order.IsClosing() //order must not be in closing state
+                ){
+                    own_group_order_open_count++;
+                }
+
+        }
+
+        if(!this.Peer()) return false;
+
+        var peer_orders = this.Peer().Orders();
+        var peer_group_order_open_count = 0;
+
+        for (let order of peer_orders) {
+
+            if(order.GropuId() === peer_order.GropuId() 
+                && order.IsOpen() //order must be open
+                && !order.IsClosing() //order must not be in closing state
+                ){
+                    peer_group_order_open_count++;
+                }
+
+        }
+
+        return own_group_order_open_count === own_order.GroupOrderCount() 
+                    && peer_group_order_open_count === peer_order.GroupOrderCount();
+    }
 
     public RetrySendPlaceOrderOrForceClosePeer(placement: OrderPlacement) {
         var attempts = this.PlaceOrderRetryAttempt.get(placement.id);
@@ -1067,11 +1095,22 @@ export class TraderAccount {
 
     public SendModify(synced_orders: Array<PairOrder>) {
 
+        var is_all_group_orders_open: boolean = false;
         for (let paired of synced_orders) {
             let own_column: number = this.PairColumnIndex();
             let peer_column: number = this.peer.PairColumnIndex();
             var own_order = paired[own_column];
             var peer_order = paired[peer_column];
+                               
+            //Well before we  send modification we should ensure all the group orders
+            //are open and not in closing state. We don't what the stoploss and target
+            //to be modified when orders are being closed, it is pointless
+            if(!is_all_group_orders_open){
+                is_all_group_orders_open = this.IsAllGroupOrdersOpenAnNotClosing(own_order, peer_order);
+                if(!is_all_group_orders_open){
+                    return;//wait till all group orders are open
+                }
+            }
 
             //skip for those that are already closed or sync modifying of target is in progress
             if (own_order.IsClosed()) {

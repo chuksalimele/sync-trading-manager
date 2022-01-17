@@ -270,8 +270,8 @@ export class SyncService {
 
     var max_percent = max_percent_diff_in_account_balances;    
 
-    if(!traderAccountA.ValidatePlaceOrder(symbol, lot_size_a, max_percent) 
-      || !traderAccountB.ValidatePlaceOrder(symbol, lot_size_b, max_percent)){
+    if(!traderAccountA.ValidatePlaceOrder(symbol, lot_size_a, max_percent, is_triggered) 
+      || !traderAccountB.ValidatePlaceOrder(symbol, lot_size_b, max_percent, is_triggered)){
       return;
     }
     
@@ -345,14 +345,17 @@ export class SyncService {
       lot_size : lot_size_b * trade_split_count // total lot size for the group          
     }
 
+
     var command = 'check_enough_money';
+
+    var err_prefix = is_triggered? "Trigger validation error!\n" : "";
 
     traderAccountA.sendEACommand(command, a_prop,(response: IResponse)=>{
         a_success =response.success; 
         if(a_success && b_success){//there is enough money so send
           afterCompleteValidation();
         }else if(!a_success){
-          traderAccountA.SetLastError(response.message);
+          traderAccountA.SetLastError(`${err_prefix}${response.message}`);
           ipcSend("validate-place-order-fail", traderAccountA.Safecopy());
         }
     })
@@ -362,7 +365,7 @@ export class SyncService {
         if(a_success && b_success){//there is enough money so send
           afterCompleteValidation();
         }else if(!b_success){
-          traderAccountB.SetLastError(response.message);
+          traderAccountB.SetLastError(`${err_prefix}${response.message}`);
           ipcSend("validate-place-order-fail", traderAccountB.Safecopy());
         }
     })
@@ -986,6 +989,7 @@ export class SyncService {
     if (order) {
       order.SetCopyable(false);
       order.SetGroupId(placement.trade_split_group_id);
+      order.SetGroupOderCount(placement.trade_split_count);
     }
 
     //if peer did not complete with success status then focibly close this order

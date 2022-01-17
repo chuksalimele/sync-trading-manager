@@ -5,6 +5,7 @@ var SyncUtil_1 = require("./SyncUtil");
 var Order = /** @class */ (function () {
     function Order(ticket) {
         this.peer_ticket = -1; //greater than -1 if it is synced
+        this.group_order_count = 0;
         this.open_price = 0;
         this.open_time = 0;
         this.stoploss = 0;
@@ -35,7 +36,8 @@ var Order = /** @class */ (function () {
         this.ticket = ticket;
     }
     Order.prototype.GropuId = function () { return this.group_id; };
-    Order.prototype.IsOpen = function () { return this.open_time > 0; };
+    Order.prototype.GroupOrderCount = function () { return this.group_order_count; };
+    Order.prototype.IsOpen = function () { return this.open_time > 0 && this.close_time == 0; };
     Order.prototype.IsClosed = function () { return this.close_time > 0; };
     ;
     Order.prototype.SyncCopying = function (copying) { return this.is_sync_copying = copying; };
@@ -71,6 +73,9 @@ var Order = /** @class */ (function () {
     };
     Order.prototype.SetGroupId = function (trade_split_group_id) {
         this.group_id = trade_split_group_id;
+    };
+    Order.prototype.SetGroupOderCount = function (group_order_count) {
+        this.group_order_count = group_order_count;
     };
     return Order;
 }());

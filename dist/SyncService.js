@@ -176,8 +176,8 @@ var SyncService = /** @class */ (function () {
             ? Constants_1.Constants.BUY
             : Constants_1.Constants.SELL;
         var max_percent = max_percent_diff_in_account_balances;
-        if (!traderAccountA.ValidatePlaceOrder(symbol, lot_size_a, max_percent)
-            || !traderAccountB.ValidatePlaceOrder(symbol, lot_size_b, max_percent)) {
+        if (!traderAccountA.ValidatePlaceOrder(symbol, lot_size_a, max_percent, is_triggered)
+            || !traderAccountB.ValidatePlaceOrder(symbol, lot_size_b, max_percent, is_triggered)) {
             return;
         }
         var paired_uuid_arr = new Array();
@@ -217,13 +217,14 @@ var SyncService = /** @class */ (function () {
             lot_size: lot_size_b * trade_split_count // total lot size for the group          
         };
         var command = 'check_enough_money';
+        var err_prefix = is_triggered ? "Trigger validation error!\n" : "";
         traderAccountA.sendEACommand(command, a_prop, function (response) {
             a_success = response.success;
             if (a_success && b_success) { //there is enough money so send
                 afterCompleteValidation();
             }
             else if (!a_success) {
-                traderAccountA.SetLastError(response.message);
+                traderAccountA.SetLastError("" + err_prefix + response.message);
                 main_1.ipcSend("validate-place-order-fail", traderAccountA.Safecopy());
             }
         });
@@ -233,7 +234,7 @@ var SyncService = /** @class */ (function () {
                 afterCompleteValidation();
             }
             else if (!b_success) {
-                traderAccountB.SetLastError(response.message);
+                traderAccountB.SetLastError("" + err_prefix + response.message);
                 main_1.ipcSend("validate-place-order-fail", traderAccountB.Safecopy());
             }
         });
@@ -671,6 +672,7 @@ var SyncService = /** @class */ (function () {
         if (order) {
             order.SetCopyable(false);
             order.SetGroupId(placement.trade_split_group_id);
+            order.SetGroupOderCount(placement.trade_split_count);
         }
         //if peer did not complete with success status then focibly close this order
         if (peer_placement.OperationCompleteStatus() == OrderPlacement_1.OrderPlacement.COMPLETE_FAIL) {

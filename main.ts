@@ -121,7 +121,14 @@ function Main() {
         var account_a = service.getTraderAccount(obj.account_a.broker, obj.account_a.account_number);
         var account_b = service.getTraderAccount(obj.account_b.broker, obj.account_b.account_number);
 
-        service.SyncPlaceOrders(account_buy, account_a, account_b, obj.symbol, obj.lot_size_a, obj.lot_size_b, obj.trade_split_count, obj.max_percent_diff_in_account_balances);
+        service.SyncPlaceOrders(account_buy,
+                                account_a,
+                                account_b,
+                                obj.symbol, 
+                                obj.lot_size_a,
+                                obj.lot_size_b, 
+                                parseFloat(obj.trade_split_count),
+                                parseFloat(obj.max_percent_diff_in_account_balances));
             
     });
 
@@ -141,8 +148,8 @@ function Main() {
         trigger.pivot_price = account_buy.ChartMarketPrice();
         trigger.type = obj.trigger_type;
         trigger.symbol = obj.symbol;
-        trigger.trade_split_count = obj.trade_split_count
-        trigger.max_percent_diff_in_account_balances = obj.max_percent_diff_in_account_balances;
+        trigger.trade_split_count = parseFloat(obj.trade_split_count)
+        trigger.max_percent_diff_in_account_balances = parseFloat(obj.max_percent_diff_in_account_balances);
 
         `<option value="Instant now">Instant now</option>
                             <option value="Instant when both accounts have credit bonuses">Instant when both accounts have credit bonuses</option>
@@ -167,9 +174,8 @@ function Main() {
             trigger.remark = `The order will be execute immediately when credit bonuses are available for both accounts`
         }
 
-        for(var i = 0; i < obj.trade_split_count; i++){
-            service.AddPlaceOrderTrigger(trigger);
-        }
+        service.AddPlaceOrderTrigger(trigger);
+        
     });
 
     ipcMain.on('cancel-place-order-trigger', function (event, uuid) {

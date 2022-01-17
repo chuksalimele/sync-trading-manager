@@ -7,6 +7,7 @@ export class Order {
     public ticket: number;
     public peer_ticket: number = -1;//greater than -1 if it is synced
     public group_id: string; // trade split group id
+    public group_order_count: number = 0;
     public position: string;
     public symbol: string;
     public raw_symbol: string;
@@ -43,8 +44,10 @@ export class Order {
     }
 
     public GropuId(): string { return this.group_id; }
+    
+    public GroupOrderCount(){return this.group_order_count;}
 
-    public IsOpen(): boolean { return this.open_time > 0; }
+    public IsOpen(): boolean { return this.open_time > 0 && this.close_time == 0; }
 
     public IsClosed(): boolean { return this.close_time > 0 };
 
@@ -85,5 +88,10 @@ export class Order {
     SetGroupId(trade_split_group_id: string) {
         this.group_id = trade_split_group_id;
       }
+
+    SetGroupOderCount(group_order_count: number){
+        this.group_order_count = group_order_count;
+    }   
+
 
 }
