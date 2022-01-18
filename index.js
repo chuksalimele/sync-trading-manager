@@ -879,8 +879,9 @@ function ComputeLotSize() {
 
 
 
-  if ((typeof AppConfig.symbol[symbol][accountA.broker][accountA.account_number] === "string" && AppConfig.symbol[symbol][accountA.broker][accountA.account_number] === "") 
-      ||(typeof AppConfig.symbol[symbol][accountA.broker][accountA.account_number] === "object" && AppConfig.symbol[symbol][accountA.broker][accountA.account_number]['symbol'] === "")) {
+  if (typeof AppConfig.symbol[symbol][accountA.broker] !== "object" 
+      || typeof AppConfig.symbol[symbol][accountA.broker][accountA.account_number] !== "object" 
+      || AppConfig.symbol[symbol][accountA.broker][accountA.account_number]['symbol'] === "") {
     alertBox(
       "Invalid",
       `Please configure the relative of ${symbol} for ${accountA.broker}!`
@@ -889,8 +890,9 @@ function ComputeLotSize() {
   }
 
 
-  if ((typeof AppConfig.symbol[symbol][accountB.broker][accountB.account_number] === "string" && AppConfig.symbol[symbol][accountB.broker][accountB.account_number] === "") 
-      ||(typeof AppConfig.symbol[symbol][accountB.broker][accountB.account_number] === "object" && AppConfig.symbol[symbol][accountB.broker][accountB.account_number]['symbol'] === "")) {
+  if (typeof AppConfig.symbol[symbol][accountB.broker] !== "object" 
+      || typeof AppConfig.symbol[symbol][accountB.broker][accountB.account_number] !== "object" 
+      || AppConfig.symbol[symbol][accountB.broker][accountB.account_number]['symbol'] === "") {
     alertBox(
       "Invalid",
       `Please configure the relative of ${symbol} for ${accountB.broker}!`
@@ -1135,8 +1137,9 @@ function PlaceOrder() {
         
         
 
-        if ((typeof AppConfig.symbol[symbol][broker][account_number] === "string" && AppConfig.symbol[symbol][broker][account_number] === "") 
-          ||(typeof AppConfig.symbol[symbol][broker][account_number] === "object" && AppConfig.symbol[symbol][broker][account_number]['symbol'] === ""))  {
+        if (typeof AppConfig.symbol[symbol][broker] !== "object" 
+            || typeof AppConfig.symbol[symbol][broker][account_number] !== "object" 
+            ||AppConfig.symbol[symbol][broker][account_number]['symbol'] === "")  {
           alertBox(
             "Invalid",
             `Please configure the relative of ${symbol} for ${broker}!`
@@ -1155,8 +1158,9 @@ function PlaceOrder() {
         var peer_account_number = peer_account.account_number;
         
 
-        if ((typeof AppConfig.symbol[symbol][peer_broker][peer_account_number] === "string" && AppConfig.symbol[symbol][peer_broker][peer_account_number] === "") 
-          ||(typeof AppConfig.symbol[symbol][peer_broker][peer_account_number] === "object" && AppConfig.symbol[symbol][peer_broker][peer_account_number]['symbol'] === "")){
+        if (typeof AppConfig.symbol[symbol][peer_broker] !== "object" 
+        || typeof AppConfig.symbol[symbol][peer_broker][peer_account_number] !== "object" 
+        || AppConfig.symbol[symbol][peer_broker][peer_account_number]['symbol'] === ""){
           alertBox(
             "Attention",
             `Please configure the relative of ${symbol} for ${peer_broker}!`
@@ -1509,9 +1513,17 @@ function generalSymbol(accountA, accountB) {
 
   for (var symbol in AppConfig.symbol) {
     var symbolsObj = AppConfig.symbol[symbol];
+
+    if(typeof symbolsObj[accountA.broker] !== 'object'
+        || typeof symbolsObj[accountB.broker] !== 'object'
+        || typeof symbolsObj[accountA.broker][accountA.account_number] !== 'object'
+        || typeof symbolsObj[accountB.broker][accountB.account_number] !== 'object'){
+       continue;
+     }
+
     if (
-      (symbolsObj[accountA.broker]?.[accountA.account_number] === accountA.chart_symbol || symbolsObj[accountA.broker]?.[accountA.account_number]['symbol'] === accountA.chart_symbol)
-       && (symbolsObj[accountB.broker]?.[accountB.account_number] === accountB.chart_symbol || symbolsObj[accountB.broker]?.[accountB.account_number]['symbol'] === accountB.chart_symbol)
+      (symbolsObj[accountA.broker][accountA.account_number]['symbol'] === accountA.chart_symbol)
+       && (symbolsObj[accountB.broker][accountB.account_number]['symbol'] === accountB.chart_symbol)
     ) {
       return symbol;
     }

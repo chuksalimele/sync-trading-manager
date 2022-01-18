@@ -228,11 +228,9 @@ export class SyncUtil {
         if (symb_config) {
             var rel_symbols = symb_config[symbol];
             if (rel_symbols) {
-                var obj = rel_symbols[broker]?.[account_number];
-                if (typeof obj === 'string') {
-                    return obj;//support for old configuration
-                }
-                if (typeof obj === 'object') {
+                var obj;                
+                if (typeof rel_symbols[broker] === 'object'
+                    && typeof (obj =rel_symbols[broker][account_number]) === 'object') {
                     return obj['symbol'];// using new configuration
                 }
             }
@@ -246,8 +244,9 @@ export class SyncUtil {
         if (symb_config) {
             var allowable_entry_spread = symb_config[symbol];
             if (allowable_entry_spread) {
-                var obj = allowable_entry_spread[broker]?.[account_number];
-                if (typeof obj === 'object') {
+                var obj;
+                if (typeof allowable_entry_spread[broker] === 'object' 
+                        && (obj = allowable_entry_spread[broker][account_number]) === 'object') {
                     return obj['allowable_entry_spread'];// using new configuration
                 }
             }

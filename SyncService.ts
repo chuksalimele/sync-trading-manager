@@ -1344,7 +1344,7 @@ export class SyncService {
     if (data == null || data.length == 0) return;
 
     if (data != "ping=pong") {
-      console.log(`[${account.StrID()}] `, data); //TESTING!!!
+      //console.log(`[${account.StrID()}] `, data); //TESTING!!!
     }
 
     let intro: boolean = false;
