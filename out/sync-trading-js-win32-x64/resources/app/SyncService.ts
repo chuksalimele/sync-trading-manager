@@ -239,6 +239,7 @@ export class SyncService {
     return arr;
   }
 
+
   public SyncPlaceOrders(
     traderAccountBUY: TraderAccount,
     traderAccountA: TraderAccount,
@@ -246,83 +247,14 @@ export class SyncService {
     symbol: string,
     lot_size_a: number,
     lot_size_b: number,
+    trade_split_count: number,
     max_percent_diff_in_account_balances: number = Infinity,
     is_triggered: boolean = false
-  ) {
+  ){
+
     if (!traderAccountBUY.Peer()) {
       return;
     }
-
-    if (
-      max_percent_diff_in_account_balances >= 0 &&
-      traderAccountA.AccountBalance() > 0 &&
-      traderAccountB.AccountBalance() > 0
-    ) {
-      var perecent_a = Math.abs(
-        ((traderAccountA.AccountBalance() - traderAccountB.AccountBalance()) /
-          traderAccountA.AccountBalance()) *
-          100
-      );
-      var perecent_b = Math.abs(
-        ((traderAccountA.AccountBalance() - traderAccountB.AccountBalance()) /
-          traderAccountB.AccountBalance()) *
-          100
-      );
-
-      if (perecent_a > max_percent_diff_in_account_balances) {
-        ipcSend(
-          "sync-place-order-reject",
-          `Percent difference in account balance, ${traderAccountA
-            .AccountBalance()
-            .toFixed(
-              2
-            )}${traderAccountA.AccountCurrency()} of [${traderAccountA.Broker()} , ${traderAccountA.AccountNumber()}]  from that of ${traderAccountB
-            .AccountBalance()
-            .toFixed(
-              2
-            )}${traderAccountB.AccountCurrency()} of [${traderAccountB.Broker()} , ${traderAccountB.AccountNumber()}] which is ${perecent_a.toFixed(
-            2
-          )}% is greater than the allowable maximum of ${max_percent_diff_in_account_balances}%`
-        );
-        return;
-      }
-
-      if (perecent_b > max_percent_diff_in_account_balances) {
-        ipcSend(
-          "sync-place-order-reject",
-          `Percent difference in account balance, ${traderAccountB
-            .AccountBalance()
-            .toFixed(
-              2
-            )}${traderAccountB.AccountCurrency()} of [${traderAccountB.Broker()} , ${traderAccountB.AccountNumber()}]  from that of  ${traderAccountA
-            .AccountBalance()
-            .toFixed(
-              2
-            )}${traderAccountA.AccountCurrency()} of [${traderAccountA.Broker()} , ${traderAccountA.AccountNumber()}] which is ${perecent_b.toFixed(
-            2
-          )}% is greater than the allowable maximum of ${max_percent_diff_in_account_balances}%`
-        );
-        return;
-      }
-    }
-
-    //clear off triggers for place order - the strategy does not permit allowing these triggers when any trade is open
-    this.ClearPlaceOrderTriggers(
-      "Placing order has cleared off all pending triggers."
-    );
-
-    var paired_uuid = SyncUtil.Unique();
-    var placementA: OrderPlacement = null;
-    var placementB: OrderPlacement = null;
-
-    /*if (traderAccountBUY.Broker() == traderAccountA.Broker()
-            && traderAccountBUY.AccountNumber() == traderAccountA.AccountNumber()) {
-            placementA = new OrderPlacement(paired_uuid, symbol, Constants.BUY, lot_size_a, is_triggered);
-            placementB = new OrderPlacement(paired_uuid, symbol, Constants.SELL, lot_size_b, is_triggered);
-        } else {
-            placementA = new OrderPlacement(paired_uuid, symbol, Constants.SELL, lot_size_a, is_triggered);
-            placementB = new OrderPlacement(paired_uuid, symbol, Constants.BUY, lot_size_b, is_triggered);
-        }*/
 
     var position_a: string =
       traderAccountBUY.Broker() == traderAccountA.Broker() &&
@@ -336,30 +268,109 @@ export class SyncService {
         ? Constants.BUY
         : Constants.SELL;
 
-    placementA = new OrderPlacement(
-      paired_uuid,
-      symbol,
-      position_a,
-      lot_size_a,
-      is_triggered
-    );
+    var max_percent = max_percent_diff_in_account_balances;    
 
-    placementB = new OrderPlacement(
-      paired_uuid,
-      symbol,
-      position_b,
-      lot_size_b,
-      is_triggered
-    );
+    if(!traderAccountA.ValidatePlaceOrder(symbol, lot_size_a, max_percent, is_triggered) 
+      || !traderAccountB.ValidatePlaceOrder(symbol, lot_size_b, max_percent, is_triggered)){
+      return;
+    }
+    
+    var paired_uuid_arr: Array<string> = new Array<string>();
+    var trade_split_group_id_a = SyncUtil.Unique();
+    var trade_split_group_id_b = SyncUtil.Unique();
 
-    traderAccountA.SyncPlacingOrders.set(paired_uuid, placementA);
-    traderAccountB.SyncPlacingOrders.set(paired_uuid, placementB);
+    for(var i=0 ; i < trade_split_count; i++){
+      var paired_uuid = SyncUtil.Unique();
+      var placementA: OrderPlacement = null;
+      var placementB: OrderPlacement = null;
+          
+      placementA = new OrderPlacement(
+        paired_uuid,
+        symbol,
+        position_a,
+        lot_size_a,
+        trade_split_group_id_a,
+        trade_split_count,
+        is_triggered
+      );
+  
+      placementB = new OrderPlacement(
+        paired_uuid,
+        symbol,
+        position_b,
+        lot_size_b,
+        trade_split_group_id_b,
+        trade_split_count,
+        is_triggered
+      );
+  
+      traderAccountA.SyncPlacingOrders.set(paired_uuid, placementA);
+      traderAccountB.SyncPlacingOrders.set(paired_uuid, placementB);
 
-    //traderAccountBUY.PlaceOrder(placementA); //old
-    //traderAccountBUY.Peer().PlaceOrder(placementB);//old
+      paired_uuid_arr.push(paired_uuid);
 
-    traderAccountA.ValidatePlaceOrder(placementA); //new
-    traderAccountB.ValidatePlaceOrder(placementB); //new
+      var aop1: AccountOrderPlacement = [traderAccountA, placementA];
+      var aop2: AccountOrderPlacement = [traderAccountB, placementB];
+
+      this.pendingAccountPlacementOrderMap.set(paired_uuid, [aop1, aop2])
+    }
+
+
+    var afterCompleteValidation = ()=>{
+
+      //clear off triggers for place order - the strategy does not permit allowing these triggers when any trade is open
+      this.ClearPlaceOrderTriggers(
+        "Placing order has cleared off all pending triggers."
+      );
+      
+      for(var i=0 ; i < paired_uuid_arr.length; i++){
+        this.handlePendingAccountOrderPlacement(paired_uuid_arr[i], true);
+      }
+
+    }
+    
+    // check enough money
+    var a_success = false;
+    var b_success = false;
+
+    var a_prop = {
+        symbol: SyncUtil.GetRelativeSymbol(symbol, traderAccountA.Broker(), traderAccountA.AccountNumber()),
+        position: position_a, 
+        lot_size : lot_size_a * trade_split_count // total lot size for the group          
+    }
+
+    var b_prop = {
+      symbol: SyncUtil.GetRelativeSymbol(symbol, traderAccountB.Broker(), traderAccountB.AccountNumber()),
+      position: position_b, 
+      lot_size : lot_size_b * trade_split_count // total lot size for the group          
+    }
+
+
+    var command = 'check_enough_money';
+
+    var err_prefix = is_triggered? "Trigger validation error!\n" : "";
+
+    traderAccountA.sendEACommand(command, a_prop,(response: IResponse)=>{
+        a_success =response.success; 
+        if(a_success && b_success){//there is enough money so send
+          afterCompleteValidation();
+        }else if(!a_success){
+          traderAccountA.SetLastError(`${err_prefix}${response.message}`);
+          ipcSend("validate-place-order-fail", traderAccountA.Safecopy());
+        }
+    })
+
+    traderAccountB.sendEACommand(command, b_prop, (response: IResponse)=>{
+        b_success =response.success;
+        if(a_success && b_success){//there is enough money so send
+          afterCompleteValidation();
+        }else if(!b_success){
+          traderAccountB.SetLastError(`${err_prefix}${response.message}`);
+          ipcSend("validate-place-order-fail", traderAccountB.Safecopy());
+        }
+    })
+    
+    
   }
 
   public GetEmailer(): Emailer {
@@ -566,6 +577,7 @@ export class SyncService {
       trigger.symbol,
       trigger.buy_lot_size,
       trigger.sell_lot_size,
+      trigger.trade_split_count,
       trigger.max_percent_diff_in_account_balances,
       true
     );
@@ -930,163 +942,11 @@ export class SyncService {
       var peer_placement: OrderPlacement = accPl[1][1];
 
       //now send
-      traderAccount.PlaceOrder(placement);
-      peerAccount.PlaceOrder(peer_placement);
+      traderAccount.PlaceOrder(placement);//old
+      peerAccount.PlaceOrder(peer_placement);//old
     }
 
     this.pendingAccountPlacementOrderMap.delete(uuid);
-  }
-
-  private OnValidatePlaceOrderResult(
-    traderAccount: TraderAccount,
-    uuid: string,
-    spread_cost: number,
-    required_margin: number,
-    success: boolean,
-    error: string
-  ) {
-    if (traderAccount == null) return;
-
-    var peerAccount = this.getPeer(traderAccount);
-
-    if (peerAccount == null) return;
-
-    var placement: OrderPlacement = traderAccount.SyncPlacingOrders.get(uuid);
-    var peer_placement: OrderPlacement = peerAccount.SyncPlacingOrders.get(
-      uuid
-    );
-
-    if (!success) {
-      traderAccount.SyncPlacingOrders.delete(uuid);
-      peerAccount.SyncPlacingOrders.delete(uuid);
-
-      ipcSend("validate-place-order-fail", traderAccount.Safecopy());
-
-      return;
-    }
-
-    if (!placement) {
-      //already deleted
-      ipcSend("validate-place-order-unknown-due-to-delete", traderAccount.Safecopy());
-      return;
-    }
-
-    placement.SetValidateResult(success, error);
-    placement.SetSpreadCost(spread_cost);
-    placement.SetRequiredMargin(required_margin);
-
-    if (
-      placement.state == Constants.VALIDATION_SUCCESS
-    ) {
-      ipcSend("validate-place-order-succesful", traderAccount.Safecopy());
-    }
-
-    if (
-      placement.state != Constants.VALIDATION_SUCCESS ||
-      peer_placement.state != Constants.VALIDATION_SUCCESS
-    ) {
-      return; //one done
-    }
-
-    if (
-      SyncUtil.AppConfigMap.get("show_waning_message_if_loss_is_possible") ==
-      true
-    ) {
-      var aop1: AccountOrderPlacement = [traderAccount, placement];
-      var aop2: AccountOrderPlacement = [peerAccount, peer_placement];
-
-      this.pendingAccountPlacementOrderMap.set(uuid, [aop1, aop2]);
-
-      var crashAccount: TraderAccount = null;
-
-      var possibleLossA = this.HedgePossibleLoss(
-        traderAccount,
-        placement,
-        peer_placement
-      );
-      
-      var possibleLossB = this.HedgePossibleLoss(
-        peerAccount,
-        peer_placement,
-        placement
-      );
-
-      var possible_loss: number =
-        possibleLossA < possibleLossB ? possibleLossA : possibleLossB;
-      if (possibleLossA < possibleLossB) {
-        possible_loss = possibleLossA;
-        crashAccount = traderAccount;
-      } else {
-        possible_loss = possibleLossB;
-        crashAccount = peerAccount;
-      }
-
-      if (possible_loss < 0) {
-        if (!placement.is_triggered) {
-          ipcSend("show-place-order-warning-alert", {
-            warning: this.LossWaringMessage(crashAccount, possible_loss),
-            uuid: uuid,
-          });
-        } else {
-          //for the case of triggered order no need for warning alert. Just reject the order
-          ipcSend(
-            "place-order-trigger-rejected",
-            this.LossRejectionMessage(crashAccount, possible_loss)
-          );
-        }
-      }else{
-        this.handlePendingAccountOrderPlacement(uuid, true);
-      }
-
-    } else {
-      this.handlePendingAccountOrderPlacement(uuid, true);
-    }
-
-    return; //both done
-  }
-
-  private HedgePossibleLoss(
-    account: TraderAccount,
-    placement: OrderPlacement,
-    peer_placement: OrderPlacement
-  ): number {
-    if (!account.Peer()) return 0;
-
-    var peerAccount = account.Peer();
-
-    var stopout_amount: number =
-      (account.AccountStopoutLevel() * placement.required_margin) / 100;
-      
-    var eatable_margin: number = placement.required_margin - stopout_amount;
-
-    var eatable_amount: number =
-      account.AccountCredit() < eatable_margin
-        ? account.AccountCredit()
-        : eatable_margin; //smaller amount is eatable
-
-    var possible_loss =
-      eatable_amount -
-      Math.abs(placement.spread_cost) -
-      Math.abs(peer_placement.spread_cost);
-
-    possible_loss = parseFloat(possible_loss.toFixed(2));
-
-    return possible_loss;
-  }
-
-
-  private LossWaringMessage(
-    crashAccount: TraderAccount,
-    possible_loss: number
-  ) {
-    return `You may loss up to ${possible_loss} ${crashAccount.AccountCurrency()} on this sync trading position if account ${crashAccount.AccountNumber()} on ${crashAccount.Broker()} crashes.`;
-  }
-
-  private LossRejectionMessage(
-    crashAccount: TraderAccount,
-    possible_loss: number
-  ) {
-    return `Place order trigger was rejected because of possible loss of up to ${possible_loss} ${crashAccount.AccountCurrency()} on this sync trading position if account ${crashAccount.AccountNumber()} on ${crashAccount.Broker()} crashes.`;
   }
 
   private OnPlaceOrderResult(
@@ -1128,6 +988,8 @@ export class SyncService {
     var order = traderAccount.GetOrder(ticket);
     if (order) {
       order.SetCopyable(false);
+      order.SetGroupId(placement.trade_split_group_id);
+      order.SetGroupOderCount(placement.trade_split_count);
     }
 
     //if peer did not complete with success status then focibly close this order
@@ -1482,7 +1344,7 @@ export class SyncService {
     if (data == null || data.length == 0) return;
 
     if (data != "ping=pong") {
-      console.log(`[${account.StrID()}] `, data); //TESTING!!!
+      //console.log(`[${account.StrID()}] `, data); //TESTING!!!
     }
 
     let intro: boolean = false;
@@ -1495,7 +1357,6 @@ export class SyncService {
     let is_close_trades: boolean = false;
     let is_modify_trades: boolean = false;
     let is_account_balance_changed: boolean = false;
-    let validate_place_order_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
     let place_order_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
     let copy_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
     let own_close_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
@@ -1513,11 +1374,39 @@ export class SyncService {
     let fire_market_opened = false;
     let spread_cost: number = 0;
     let required_margin: number = 0;
+    let symbol = "";
+    let raw_symbol = "";
+    let command_id = "";
+    let command = ""; // name of the command
+    let command_response = "";
+    let command_success = false;
 
     for (var i = 0; i < token.length; i++) {
       var split = token[i].split("=");
       var name = split[0];
       var value = split[1];
+
+      if(name == "command"){
+        command = value;
+
+      }
+
+      if(name == "command_id"){
+        command_id = value;
+      }
+
+      if(name == "command_response"){
+        command_response = value;
+      }
+
+      if(name == "command_success"){
+        command_success = value === "true";
+        account.EACommandList.get(command_id)?.callback({
+          message: command_response,
+          success: command_success
+        });
+        account.EACommandList.delete(command_id);
+      }
 
       if (name == "is_market_closed") {
         if (value == "true") {
@@ -1611,8 +1500,49 @@ export class SyncService {
         account.SetAccountSwapPerDay(parseFloat(value));
       }
 
+      if (name == "terminal_connected") {
+        account.SetTerminalConnected(value === "true");
+      }
+
+      
+      if (name == "only_trade_with_credit") {
+        account.SetOnlyTradeWithCredit(value === "true");
+      }
+      
       if (name == "chart_symbol") {
         account.SetChartSymbol(value);
+      }
+      
+      if (name == "chart_symbol_trade_allowed") {
+        account.SetChartSymbolTradeAllowed(value === "true");
+      }
+
+      if (name == "chart_symbol_max_lot_size") {
+        account.SetChartSymbolMaxLotSize(parseFloat(value));
+      }
+
+      if (name == "chart_symbol_min_lot_size") {
+        account.SetChartSymbolMinLotSize(parseFloat(value));
+      }
+
+      if (name == "chart_symbol_tick_value") {
+        account.SetChartSymbolTickValue(parseFloat(value));
+      }
+
+      if (name == "chart_symbol_swap_long") {
+        account.SetChartSymbolSwapLong(parseFloat(value));
+      }
+
+      if (name == "chart_symbol_swap_short") {
+        account.SetChartSymbolSwapShort(parseFloat(value));
+      }
+      
+      if (name == "chart_symbol_trade_units") {
+        account.SetChartSymbolTradeUnits(parseFloat(value));
+      }
+
+      if (name == "chart_symbol_spread") {
+        account.SetChartSymbolSpread(parseFloat(value));
       }
 
       if (name == "chart_market_price") {
@@ -1668,10 +1598,18 @@ export class SyncService {
       }
 
       if (name == "symbol") {
+        symbol = value; //important - used in this loop
         account.GetOrder(ticket).symbol = value;
       }
 
+
+      if (name == "symbol_commission_per_lot") {        
+        account.SetSymbolCommissionPerLot(symbol, parseFloat(value));
+        account.SetSymbolCommissionPerLot(raw_symbol, parseFloat(value));
+      }
+      
       if (name == "raw_symbol") {
+        raw_symbol = value; //important - used in this loop
         account.GetOrder(ticket).raw_symbol = value;
       }
 
@@ -1713,6 +1651,8 @@ export class SyncService {
         order.close_time = Number.parseInt(value);
         if (!was_close && order.close_time > 0) {
           //just closed
+          account.SendCloseToGroup(ticket); // also close all orders in same group
+
           this.emailer.OrderCloseNotify(account, order);
         }
       }
@@ -1795,10 +1735,6 @@ export class SyncService {
         modify_stoploss_success = value;
       }
 
-      if (name == "validate_place_order_success") {
-        validate_place_order_success = value;
-      }
-
       if (name == "place_order_success") {
         place_order_success = value;
       }
@@ -1844,7 +1780,6 @@ export class SyncService {
         account.SetHedgeProfit(parseFloat(value));
       }
     
-
       if (name == "error") {
         error = value;
         account.SetLastError(error);
@@ -1887,7 +1822,7 @@ export class SyncService {
       this.SendCopyToPeer(account);
     }
 
-    if (is_close_trades) {
+    if (is_close_trades) {    
       this.SendCloseToPeer(account);
     }
 
@@ -1899,27 +1834,6 @@ export class SyncService {
       ipcSend("account-balance-changed", account.Safecopy());
     }
 
-    if (validate_place_order_success == "true") {
-      this.OnValidatePlaceOrderResult(
-        account,
-        uuid,
-        spread_cost,
-        required_margin,
-        true,
-        error
-      );
-    }
-
-    if (validate_place_order_success == "false") {
-      this.OnValidatePlaceOrderResult(
-        account,
-        uuid,
-        spread_cost,
-        required_margin,
-        false,
-        error
-      );
-    }
 
     if (place_order_success == "true") {
       var result = this.OnPlaceOrderResult(account, ticket, uuid, true);

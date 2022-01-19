@@ -17,8 +17,18 @@ export class TraderAccount {
     private account_number: string;
     private account_name: string;
     private chart_symbol: string;
+    private only_trade_with_credit : boolean;
+    private chart_symbol_trade_allowed : boolean;
+    private terminal_connected : boolean;
     private platform_type: string;
     private icon_file: string;
+    private chart_symbol_max_lot_size: number = 0;
+    private chart_symbol_min_lot_size: number = 0;
+    private chart_symbol_tick_value: number = 0;
+    private chart_symbol_swap_long: number = 0;
+    private chart_symbol_swap_short: number = 0;
+    private chart_symbol_trade_units: number = 0;    
+    private chart_symbol_spread: number = 0;    
     private account_balance: number = 0;
     private account_equity: number = 0;
     private account_credit: number = 0;
@@ -50,6 +60,7 @@ export class TraderAccount {
     private readonly MODIFY_TARGET: number = 1;
     private readonly MODIFY_STOPLOSS: number = 2;
     public SyncPlacingOrders: Map<string, OrderPlacement> = new Map<string, OrderPlacement>();
+    public EACommandList: Map<string, IEACommand> =  new Map<string, IEACommand>();
     public test :number = 0;
     constructor(socket: any) {
         this.test = 7;
@@ -82,7 +93,17 @@ export class TraderAccount {
             account_profit: this.account_profit,
             account_free_margin: this.account_free_margin,
             hedge_profit: this.hedge_profit,
-            chart_symbol: this.chart_symbol,
+            terminal_connected : this.terminal_connected,
+            only_trade_with_credit: this.only_trade_with_credit,
+            chart_symbol: this.chart_symbol,         
+            chart_symbol_trade_allowed: this.chart_symbol_trade_allowed,   
+            chart_symbol_max_lot_size: this.chart_symbol_max_lot_size,
+            chart_symbol_min_lot_size: this.chart_symbol_min_lot_size,
+            chart_symbol_tick_value: this.chart_symbol_tick_value,
+            chart_symbol_swap_long: this.chart_symbol_swap_long,
+            chart_symbol_swap_short: this.chart_symbol_swap_short,
+            chart_symbol_trade_units: this.chart_symbol_trade_units,    
+            chart_symbol_spread: this.chart_symbol_spread,                        
             chart_market_price: this.chart_market_price,
             platform_type: this.platform_type,
             icon_file: this.icon_file,
@@ -109,7 +130,17 @@ export class TraderAccount {
                 account_profit: this.peer.account_profit,
                 account_free_margin: this.peer.account_free_margin,
                 hedge_profit: this.peer.hedge_profit,
+                terminal_connected : this.peer.terminal_connected,
+                only_trade_with_credit: this.peer.only_trade_with_credit,
                 chart_symbol: this.peer.chart_symbol,
+                chart_symbol_trade_allowed: this.peer.chart_symbol_trade_allowed,
+                chart_symbol_max_lot_size: this.peer.chart_symbol_max_lot_size,
+                chart_symbol_min_lot_size: this.peer.chart_symbol_min_lot_size,
+                chart_symbol_tick_value: this.peer.chart_symbol_tick_value,
+                chart_symbol_swap_long: this.peer.chart_symbol_swap_long,
+                chart_symbol_swap_short: this.peer.chart_symbol_swap_short,
+                chart_symbol_trade_units: this.peer.chart_symbol_trade_units,     
+                chart_symbol_spread: this.peer.chart_symbol_spread,                                
                 chart_market_price: this.peer.chart_market_price,
                 platform_type: this.peer.platform_type,
                 icon_file: this.peer.icon_file,
@@ -165,7 +196,27 @@ export class TraderAccount {
 
     public HedgeProfit(): number { return this.hedge_profit };
 
+    public TerminalConnected(): boolean { return this.terminal_connected };
+
+    public OnlyTradeWithCredit(): boolean { return this.only_trade_with_credit };
+
     public ChartSymbol(): string { return this.chart_symbol };
+
+    public ChartSymbolTradeAllowed(): boolean { return this.chart_symbol_trade_allowed };
+
+    public ChartSymbolMaxLotSize(): number { return this.chart_symbol_max_lot_size; };
+
+    public ChartSymbolMinLotSize(): number { return this.chart_symbol_min_lot_size; };
+
+    public ChartSymbolTickValue(): number { return this.chart_symbol_tick_value; };
+
+    public ChartSymbolSwapLong(): number { return this.chart_symbol_swap_long; };
+
+    public ChartSymbolSwapShort(): number { return this.chart_symbol_swap_short; };
+
+    public ChartSymbolTradeUnits(): number { return this.chart_symbol_trade_units; };
+
+    public ChartSymbolSpread(): number { return this.chart_symbol_spread; };
 
     public ChartMarketPrice(): number { return this.chart_market_price; };
 
@@ -365,8 +416,103 @@ export class TraderAccount {
         this.hedge_profit = hedge_profit
     }
 
+    private GetCommissionPerLot(symbol: string): number|string{
+        
+        var commsionConfig = SyncUtil.AppConfigMap.get('brokers_commission_per_lot')
+
+        if(!commsionConfig 
+            || !commsionConfig[this.broker] 
+            || !commsionConfig[this.broker][this.account_number]){
+            return "unknown"
+        }
+
+        var commission = commsionConfig[this.broker][this.account_number][symbol];
+
+        if(commission === 0 || commission < 0 || commission > 0){
+            return commission;
+        }
+
+        return 'unknown'
+
+    }
+
+    public SetSymbolCommissionPerLot(symbol: string, conmission_per_lot: number): void {
+        var saved_conmission_per_lot = this.GetCommissionPerLot(symbol)
+
+        if(saved_conmission_per_lot === conmission_per_lot){
+            return;
+        }
+
+        var commsionConfig = SyncUtil.AppConfigMap.get('brokers_commission_per_lot')
+
+        if(!commsionConfig){
+            commsionConfig = {};
+        }
+
+        if(!commsionConfig[this.broker]){
+            commsionConfig[this.broker] = {};
+        }
+        if(!commsionConfig[this.broker][this.account_number]){
+            commsionConfig[this.broker][this.account_number] = {};
+        }
+
+        if(!commsionConfig[this.broker][this.account_number][symbol]){
+            commsionConfig[this.broker][this.account_number][symbol] = conmission_per_lot;
+        }
+
+        SyncUtil.AppConfigMap.set('brokers_commission_per_lot', commsionConfig);
+
+        var configObj = SyncUtil.MapToObject(SyncUtil.AppConfigMap);
+
+        SyncUtil.SaveAppConfig(configObj, function (success) {
+           //TODO - report error if any
+        })
+
+
+    }
+    
+    public SetTerminalConnected(terminal_connected: boolean): void {
+        this.terminal_connected = terminal_connected
+    }
+
+    public SetOnlyTradeWithCredit(only_trade_with_credit: boolean): void {
+        this.only_trade_with_credit = only_trade_with_credit
+    }
+    
     public SetChartSymbol(chart_symbol: string): void {
         this.chart_symbol = chart_symbol
+    }
+    
+    public SetChartSymbolTradeAllowed(chart_symbol_trade_allowed: boolean): void {
+        this.chart_symbol_trade_allowed = chart_symbol_trade_allowed
+    }
+    
+    public SetChartSymbolMaxLotSize(chart_symbol_max_lot_size: number): void {
+        this.chart_symbol_max_lot_size = chart_symbol_max_lot_size
+    }
+
+    public SetChartSymbolMinLotSize(chart_symbol_min_lot_size: number): void {
+        this.chart_symbol_min_lot_size = chart_symbol_min_lot_size
+    }
+
+    public SetChartSymbolTickValue(chart_symbol_tick_value: number): void {
+        this.chart_symbol_tick_value = chart_symbol_tick_value
+    }
+
+    public SetChartSymbolSwapLong(chart_symbol_swap_long: number): void {
+        this.chart_symbol_swap_long = chart_symbol_swap_long
+    }
+
+    public SetChartSymbolSwapShort(chart_symbol_swap_short: number): void {
+        this.chart_symbol_swap_short = chart_symbol_swap_short
+    }
+
+    public SetChartSymbolTradeUnits(chart_symbol_trade_units: number): void {
+        this.chart_symbol_trade_units = chart_symbol_trade_units
+    }
+
+    public SetChartSymbolSpread(chart_symbol_spread: number): void {
+        this.chart_symbol_spread = chart_symbol_spread
     }
 
     public SetChartMarketPrice(chart_market_price: number): void {
@@ -475,83 +621,86 @@ export class TraderAccount {
         return count;
     }
 
-    public AutoLotSize(peer: TraderAccount): number|string {
-        var lot = 0;
-        if (this.Peer() == null) {
-            return "Peer cannot be null";
+    public CalculateMarginRequire(lot: number){
+        return lot*this.ChartSymbolTradeUnits()*this.ChartMarketPrice()/this.AccountLeverage();
+    }
+
+    public CalculateCommision(lot: number, symbol: string = this.chart_symbol): number{
+        var comm_per_lot: any = this.GetCommissionPerLot(symbol);
+        return !isNaN(comm_per_lot) ? (comm_per_lot * lot): 0;
+    }
+
+    public IsCommisionKnown(symbol: string = this.chart_symbol): boolean{
+        var comm_per_lot: any = this.GetCommissionPerLot(symbol);
+        return !isNaN(comm_per_lot);
+    }
+
+    public CalculateSpreadCost(lot: number): number{
+        var cost = -Math.abs(this.ChartSymbolSpread() * lot);//must alway return negative
+        return  parseFloat(cost.toFixed(2));
+    }
+
+    public CalculateSwapPerDay(position:string, lot: number): number{
+        var swap = 0;
+        if(position== 'BUY'){
+            swap = this.ChartSymbolSwapLong();
+        }else if(position== 'SELL'){
+            swap = this.ChartSymbolSwapShort();
         }
+        var cost = swap * lot;
+        return  parseFloat(cost.toFixed(2));
+    }
 
-        if (this.Peer().StrID() != peer.StrID()) {
-            return "The assign peer for computing auto lot size mismatch";
-        }
+    public AmmountToPips(amount: number,  lots: number): number{
+        return amount /(lots * this.ChartSymbolTickValue());
+    }
+     
+    public DetermineLotSizefromPips(pips: number): number|string {
 
-
-        var smLeverage = this.AccountLeverage() <= this.Peer().AccountLeverage() ?
-            this.AccountLeverage()
-            : this.Peer().AccountLeverage();
-
-        var risk = 0.65; //determines the size of account to risk -  0.5 mean half of account; 1 means full account, which is only possible with leverage of >= 200; 2 means twice account possible with >= 400 leverage 
-
-        var factor = 1;
-
-        if (smLeverage == 100) {
-            var risk = 0.5;
-        }
-
-        if (smLeverage == 100 || smLeverage == 200) {
-            factor = 0.98; //just a little less than 1 to avoid Not Enough Money error
-        }
-
-        var bigger_acct_bal = this.AccountBalance() > peer.AccountBalance() ? 
-                                this.AccountBalance() : 
-                                peer.AccountBalance();
-
-        lot = bigger_acct_bal * risk * factor / 1000;
+       var lot: number  = 
+       (this.AccountBalance() + this.AccountCredit()) /
+        (pips *  this.ChartSymbolTickValue() + this.ChartSymbolTradeUnits()*this.ChartMarketPrice()/this.AccountLeverage() * this.AccountStopoutLevel() / 100)
 
         return parseFloat(lot.toFixed(2));
     }
 
-    public DetermineLotSizefromPips(peer: TraderAccount, pips: number,  price: number, units: number): number|string {
-        if (this.Peer() == null) {
-            return "Peer cannot be null";
-        }
-
-        if (this.Peer().StrID() != peer.StrID()) {
-            return "The assign peer for computing auto lot size mismatch";
-        }
-
-        var stopout_level_in_fraction =  this.AccountStopoutLevel() /100;       
-        var urt = price * units * stopout_level_in_fraction;
-
-        var numerator = this.AccountLeverage() *(this.AccountBalance() + this.AccountCredit());
-        var denumenator = 10 * pips * this.AccountLeverage() + urt;
- 
-        var lot = numerator/ denumenator;
-
-
-        return parseFloat(lot.toFixed(2));
-    }
-
-
-    public DeterminePossibleProfitfromPips(peer: TraderAccount, pips: number,  price: number, units: number): number|string {
-        if (this.Peer() == null) {
-            return "Peer cannot be null";
-        }
-
-        if (this.Peer().StrID() != peer.StrID()) {
-            return "The assign peer for computing auto lot size mismatch";
-        }
-
-        var stopout_level_in_fraction =  this.AccountStopoutLevel() /100;       
-        var urt = price * units * stopout_level_in_fraction;
-        var stopout_amount = urt * ( this.AccountBalance() + this.AccountCredit()) / (10 * pips * this.AccountLeverage() + urt); 
-
+    public DetermineLossAtStopout(position:string, lot: number): number|string {
         
-        var possible_profit = this.AccountCredit() - stopout_amount;
+        /*double margin =  AccountMargin();
+        double stopout_margin = margin * AccountStopoutLevel() / 100;    
+        double stopout_loss = AccountBalance() + AccountCredit() + OrderCommission() + OrderSwap() - stopout_margin;   
+        double stopout_pip_move = ammountToPips(stopout_loss, OrderLots(), OrderSymbol());*/
 
-        return parseFloat(possible_profit.toFixed(2));
+        var margin = this.CalculateMarginRequire(lot);
+        var stopout_margin = margin * this.AccountStopoutLevel() / 100;
+        var stopout_loss = this.AccountBalance() + this.AccountCredit() + this.CalculateCommision(lot) - stopout_margin;   
+
+        return parseFloat(stopout_loss.toFixed(2));
+    }
+
+
+    public DeterminePipsMoveAtStopout(position:string, lot: number): number|string {
+        
+        var stopout_loss: any = this.DetermineLossAtStopout(position, lot);
+
+        if(isNaN(stopout_loss)){
+            return stopout_loss;
+        }
+        var stoput_pip_move = this.AmmountToPips(stopout_loss, lot);
+
+        return parseFloat(stoput_pip_move.toFixed(2));
     }
     
+    public sendEACommand(commmand: string, prop: object, callback: Function){
+        var command_id:string = SyncUtil.Unique();
+        var cmdObj = {
+            name : commmand,
+            callback: callback
+        }
+        this.EACommandList.set(command_id, cmdObj);
+        this.SendData(SyncUtil.CommandPacket(cmdObj.name, command_id, prop));
+    }
+
     /**
      *This method will be used to position each peer in the appropriate column when pairing for consistent access location  
      */
@@ -564,6 +713,7 @@ export class TraderAccount {
         }
         return this.StrID() < this.peer.StrID() ? 0 : 1;
     }
+
     /**
      * Generate an id that uniquely identifies the pair
      */
@@ -592,24 +742,110 @@ export class TraderAccount {
         } else {
             sign = -1;
         }
-        return order.Spread(this.broker) * sign;
+        return order.Spread(this.broker, this.account_number) * sign;
     }
 
     public PlaceOrder(placement: OrderPlacement) {
-        this.SendData(SyncUtil.SyncPlackeOrderPacket(placement, this.broker));
+        this.SendData(SyncUtil.SyncPlackeOrderPacket(placement, this.broker, this.account_number));
 
         ipcSend('sending-place-order', {
             account: this.Safecopy()
         });
     }
 
-    ValidatePlaceOrder(placement: OrderPlacement) {
-        this.SendData(SyncUtil.SyncPlackeValidateOrderPacket(placement, this.broker));
-        ipcSend('sending-validate-place-order', {
-            account: this.Safecopy()
-        });
+    ValidatePlaceOrder(symbol: string, lot_size: number, max_percent_diff_in_account_balances: number = Infinity, is_triggered: boolean= false): boolean {
+
+        var valid = false;    
+
+        var perecent = 0;   
+        
+        if (
+            max_percent_diff_in_account_balances >= 0 &&
+            this.AccountBalance() > 0 &&
+            this.Peer().AccountBalance() > 0
+        ) {
+            perecent = Math.abs(
+            ((this.AccountBalance() - this.Peer().AccountBalance()) /
+                this.AccountBalance()) *
+                100
+            );
+        }
+  
+        var err_prefix = is_triggered? "Trigger validation error!\n" : "";
+
+        if(!this.TerminalConnected()){
+            this.SetLastError(`${err_prefix}Terminal is disconnected!`);
+        }else if(this.AccountBalance() <= 0){
+            this.SetLastError(`${err_prefix}Not allowed! Account balance must be greater than zero.`);
+        }else if(this.OnlyTradeWithCredit() && this.IsLiveAccount() && this.AccountCredit() == 0){
+            this.SetLastError(`${err_prefix}Not allowed for live account! Credit cannot be zero.`);
+        }else if(lot_size > this.ChartSymbolMaxLotSize()){
+            this.SetLastError(`${err_prefix}Maximum lot size of ${this.ChartSymbolMaxLotSize()} exceeded! The specified lot size of ${lot_size} is too big.`);
+        }else if(lot_size < this.ChartSymbolMinLotSize()){
+            this.SetLastError(`${err_prefix}Cannot be below mininiun lot size of ${this.ChartSymbolMinLotSize()}. The specified lot size of ${lot_size} is too small.`);
+        }else if(this.IsMarketClosed()){
+            this.SetLastError(`${err_prefix}Market is closed!`);
+        }else if(!this.ChartSymbolTradeAllowed()){
+            this.SetLastError(`${err_prefix}Trade not allowed for ${this.ChartSymbol()}. Check if symbol is disabled or market is closed.`);
+        }else if(this.ChartSymbol() !== SyncUtil.GetRelativeSymbol(symbol, this.Broker(), this.AccountNumber())){
+            this.SetLastError(`${err_prefix}Not allowed! Chart symbol must be same as trade symbol. Symbol on chart is ${this.ChartSymbol()} while trade is ${symbol}`);
+        }else if(perecent > max_percent_diff_in_account_balances){
+            this.SetLastError(`${err_prefix}Percent difference in account balance, ${this
+                .AccountBalance()
+                .toFixed(
+                  2
+                )}${this.AccountCurrency()} of [${this.Broker()} , ${this.AccountNumber()}]  from that of ${this.Peer()
+                .AccountBalance()
+                .toFixed(
+                  2
+                )}${this.Peer().AccountCurrency()} of [${this.Peer().Broker()} , ${this.Peer().AccountNumber()}] which is ${perecent.toFixed(
+                2
+              )}% is greater than the allowable maximum of ${max_percent_diff_in_account_balances}%`);
+        }else{
+            valid = true;
+        }    
+ 
+        if(!valid){
+            ipcSend("validate-place-order-fail", this.Safecopy());            
+        }
+
+        return valid;
     }
     
+    private IsAllGroupOrdersOpenAnNotClosing(own_order: Order, peer_order: Order): boolean{
+
+        var orders = this.Orders();
+        var own_group_order_open_count = 0;
+
+        for (let order of orders) {
+            if(order.GropuId() === own_order.GropuId() 
+                && order.IsOpen() //order must be open
+                && !order.IsClosing() //order must not be in closing state
+                ){
+                    own_group_order_open_count++;
+                }
+
+        }
+
+        if(!this.Peer()) return false;
+
+        var peer_orders = this.Peer().Orders();
+        var peer_group_order_open_count = 0;
+
+        for (let order of peer_orders) {
+
+            if(order.GropuId() === peer_order.GropuId() 
+                && order.IsOpen() //order must be open
+                && !order.IsClosing() //order must not be in closing state
+                ){
+                    peer_group_order_open_count++;
+                }
+
+        }
+
+        return own_group_order_open_count === own_order.GroupOrderCount() 
+                    && peer_group_order_open_count === peer_order.GroupOrderCount();
+    }
 
     public RetrySendPlaceOrderOrForceClosePeer(placement: OrderPlacement) {
         var attempts = this.PlaceOrderRetryAttempt.get(placement.id);
@@ -641,7 +877,7 @@ export class TraderAccount {
 
         //mark as copying to avoid duplicate copies
         order.SyncCopying(true);
-        this.peer.SendData(SyncUtil.SyncCopyPacket(order, this.peer.trade_copy_type, this.broker));
+        this.peer.SendData(SyncUtil.SyncCopyPacket(order, this.peer.trade_copy_type, this.broker, this.account_number));
 
         ipcSend('sending-sync-copy', {
             account: this.Safecopy(),
@@ -807,6 +1043,19 @@ export class TraderAccount {
         }
     }
 
+    public SendCloseToGroup(ticket: number){
+        let orderObj: Order = this.orders.get(ticket);
+        var orders = this.Orders();
+        for (var order of orders) {
+            if(orderObj.IsClosed() 
+                 && orderObj.GropuId() === order.GropuId()
+                 && !order.IsClosed() 
+                 && !order.IsClosing()){                
+                this.DoSendOwnClose(order);        
+            }
+        }
+    }
+
     public RetrySendOwnClose(ticket: number) {
 
         var attempts = this.CloseRetryAttempt.get(ticket);
@@ -846,11 +1095,22 @@ export class TraderAccount {
 
     public SendModify(synced_orders: Array<PairOrder>) {
 
+        var is_all_group_orders_open: boolean = false;
         for (let paired of synced_orders) {
             let own_column: number = this.PairColumnIndex();
             let peer_column: number = this.peer.PairColumnIndex();
             var own_order = paired[own_column];
             var peer_order = paired[peer_column];
+                               
+            //Well before we  send modification we should ensure all the group orders
+            //are open and not in closing state. We don't what the stoploss and target
+            //to be modified when orders are being closed, it is pointless
+            if(!is_all_group_orders_open){
+                is_all_group_orders_open = this.IsAllGroupOrdersOpenAnNotClosing(own_order, peer_order);
+                if(!is_all_group_orders_open){
+                    return;//wait till all group orders are open
+                }
+            }
 
             //skip for those that are already closed or sync modifying of target is in progress
             if (own_order.IsClosed()) {

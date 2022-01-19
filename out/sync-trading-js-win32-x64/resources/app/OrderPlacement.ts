@@ -8,6 +8,8 @@ export class OrderPlacement {
     public paired_uuid: string;
     public ticket: number;
     public symbol: string;
+    public trade_split_count: number = 0;
+    public trade_split_group_id : string;
     public position: string;
     public lot_size: number = 0;
     public spread_cost: number = 0;
@@ -18,11 +20,13 @@ export class OrderPlacement {
     public static readonly COMPLETE_FAIL: number = 1;
     public static readonly COMPLETE_SUCCESS: number = 2;
 
-    constructor(uuid: string, symbol: string, position: string, lot_size: number, is_triggered: boolean = false) {
+    constructor(uuid: string, symbol: string, position: string, lot_size: number, trade_split_group_id:string, trade_split_count: number, is_triggered: boolean = false) {
         this.paired_uuid = uuid;
         this.symbol = symbol;
         this.position = position;
         this.lot_size = lot_size;
+        this.trade_split_group_id = trade_split_group_id;
+        this.trade_split_count = trade_split_count;
         this.is_triggered = is_triggered;
     }
 

@@ -603,7 +603,7 @@ var TraderAccount = /** @class */ (function () {
         else {
             sign = -1;
         }
-        return order.Spread(this.broker) * sign;
+        return order.Spread(this.broker, this.account_number) * sign;
     };
     TraderAccount.prototype.PlaceOrder = function (placement) {
         this.SendData(SyncUtil_1.SyncUtil.SyncPlackeOrderPacket(placement, this.broker, this.account_number));

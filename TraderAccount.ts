@@ -742,7 +742,7 @@ export class TraderAccount {
         } else {
             sign = -1;
         }
-        return order.Spread(this.broker) * sign;
+        return order.Spread(this.broker, this.account_number) * sign;
     }
 
     public PlaceOrder(placement: OrderPlacement) {

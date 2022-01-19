@@ -61,8 +61,8 @@ export class SyncUtil {
 
     }
 
-    public static SymbolSpread(broker: string, symbol: string, symbol_point: number): number {
-        var general_symbol = SyncUtil.GeneralSymbol(broker, symbol);
+    public static SymbolSpread(broker: string, account_number: string, symbol: string, symbol_point: number): number {
+        var general_symbol = SyncUtil.GeneralSymbol(broker, account_number, symbol);
         if (general_symbol) {
             var spread_config: Map<string, any> = this.AppConfigMap.get('spread');
             if (spread_config) {
@@ -75,11 +75,11 @@ export class SyncUtil {
         return 0;
     }
 
-    public static GeneralSymbol(broker: string, symbol: string): string {
+    public static GeneralSymbol(broker: string, account_number: string, symbol: string): string {
         var symbol_config: Map<string, any> = this.AppConfigMap.get('symbol');
         if (symbol_config) {
             for (var general_symbol in symbol_config) {
-                var broker_relative_symbol = symbol_config[general_symbol][broker];
+                var broker_relative_symbol = symbol_config[general_symbol][broker]?.[account_number]?.['symbol'];
 
                 var symbol_no_slash = SyncUtil.replaceAll(symbol, '/', '');
 

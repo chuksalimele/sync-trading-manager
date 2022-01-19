@@ -16,6 +16,7 @@ export class PlaceOrderTrigger {
     public max_percent_diff_in_account_balances: number = 0;
     public buy_lot_size: number = 0;
     public sell_lot_size: number = 0;
+    public trade_split_count = 0;
     public pair_id: string = '';//use this to verify if the account are still pair together
     public remark: string = '';
 

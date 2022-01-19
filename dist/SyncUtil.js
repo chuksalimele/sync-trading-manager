@@ -45,8 +45,8 @@ var SyncUtil = /** @class */ (function () {
         }
         return name;
     };
-    SyncUtil.SymbolSpread = function (broker, symbol, symbol_point) {
-        var general_symbol = SyncUtil.GeneralSymbol(broker, symbol);
+    SyncUtil.SymbolSpread = function (broker, account_number, symbol, symbol_point) {
+        var general_symbol = SyncUtil.GeneralSymbol(broker, account_number, symbol);
         if (general_symbol) {
             var spread_config = this.AppConfigMap.get('spread');
             if (spread_config) {
@@ -58,11 +58,12 @@ var SyncUtil = /** @class */ (function () {
         }
         return 0;
     };
-    SyncUtil.GeneralSymbol = function (broker, symbol) {
+    SyncUtil.GeneralSymbol = function (broker, account_number, symbol) {
+        var _a, _b;
         var symbol_config = this.AppConfigMap.get('symbol');
         if (symbol_config) {
             for (var general_symbol in symbol_config) {
-                var broker_relative_symbol = symbol_config[general_symbol][broker];
+                var broker_relative_symbol = (_b = (_a = symbol_config[general_symbol][broker]) === null || _a === void 0 ? void 0 : _a[account_number]) === null || _b === void 0 ? void 0 : _b['symbol'];
                 var symbol_no_slash = SyncUtil.replaceAll(symbol, '/', '');
                 if (broker_relative_symbol == symbol || broker_relative_symbol == symbol_no_slash) {
                     return general_symbol;

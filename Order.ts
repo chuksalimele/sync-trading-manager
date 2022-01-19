@@ -80,8 +80,8 @@ export class Order {
 
     public SetDefaultSpread(default_spread: number) { this.default_spread = default_spread; }
 
-    public Spread(broker: string): number {
-        this.spread = SyncUtil.SymbolSpread(broker, this.raw_symbol, this.point);
+    public Spread(broker: string, account_number: string): number {
+        this.spread = SyncUtil.SymbolSpread(broker, account_number, this.raw_symbol, this.point);
         return this.spread > 0 ? this.spread : this.default_spread;
     }
 

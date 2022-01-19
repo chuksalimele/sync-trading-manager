@@ -160,51 +160,13 @@ var SyncService = /** @class */ (function () {
         });
         return arr;
     };
-    SyncService.prototype.SyncPlaceOrders = function (traderAccountBUY, traderAccountA, traderAccountB, symbol, lot_size_a, lot_size_b, max_percent_diff_in_account_balances, is_triggered) {
+    SyncService.prototype.SyncPlaceOrders = function (traderAccountBUY, traderAccountA, traderAccountB, symbol, lot_size_a, lot_size_b, trade_split_count, max_percent_diff_in_account_balances, is_triggered) {
+        var _this = this;
         if (max_percent_diff_in_account_balances === void 0) { max_percent_diff_in_account_balances = Infinity; }
         if (is_triggered === void 0) { is_triggered = false; }
         if (!traderAccountBUY.Peer()) {
             return;
         }
-        if (max_percent_diff_in_account_balances >= 0 &&
-            traderAccountA.AccountBalance() > 0 &&
-            traderAccountB.AccountBalance() > 0) {
-            var perecent_a = Math.abs(((traderAccountA.AccountBalance() - traderAccountB.AccountBalance()) /
-                traderAccountA.AccountBalance()) *
-                100);
-            var perecent_b = Math.abs(((traderAccountA.AccountBalance() - traderAccountB.AccountBalance()) /
-                traderAccountB.AccountBalance()) *
-                100);
-            if (perecent_a > max_percent_diff_in_account_balances) {
-                main_1.ipcSend("sync-place-order-reject", "Percent difference in account balance, " + traderAccountA
-                    .AccountBalance()
-                    .toFixed(2) + traderAccountA.AccountCurrency() + " of [" + traderAccountA.Broker() + " , " + traderAccountA.AccountNumber() + "]  from that of " + traderAccountB
-                    .AccountBalance()
-                    .toFixed(2) + traderAccountB.AccountCurrency() + " of [" + traderAccountB.Broker() + " , " + traderAccountB.AccountNumber() + "] which is " + perecent_a.toFixed(2) + "% is greater than the allowable maximum of " + max_percent_diff_in_account_balances + "%");
-                return;
-            }
-            if (perecent_b > max_percent_diff_in_account_balances) {
-                main_1.ipcSend("sync-place-order-reject", "Percent difference in account balance, " + traderAccountB
-                    .AccountBalance()
-                    .toFixed(2) + traderAccountB.AccountCurrency() + " of [" + traderAccountB.Broker() + " , " + traderAccountB.AccountNumber() + "]  from that of  " + traderAccountA
-                    .AccountBalance()
-                    .toFixed(2) + traderAccountA.AccountCurrency() + " of [" + traderAccountA.Broker() + " , " + traderAccountA.AccountNumber() + "] which is " + perecent_b.toFixed(2) + "% is greater than the allowable maximum of " + max_percent_diff_in_account_balances + "%");
-                return;
-            }
-        }
-        //clear off triggers for place order - the strategy does not permit allowing these triggers when any trade is open
-        this.ClearPlaceOrderTriggers("Placing order has cleared off all pending triggers.");
-        var paired_uuid = SyncUtil_1.SyncUtil.Unique();
-        var placementA = null;
-        var placementB = null;
-        /*if (traderAccountBUY.Broker() == traderAccountA.Broker()
-                && traderAccountBUY.AccountNumber() == traderAccountA.AccountNumber()) {
-                placementA = new OrderPlacement(paired_uuid, symbol, Constants.BUY, lot_size_a, is_triggered);
-                placementB = new OrderPlacement(paired_uuid, symbol, Constants.SELL, lot_size_b, is_triggered);
-            } else {
-                placementA = new OrderPlacement(paired_uuid, symbol, Constants.SELL, lot_size_a, is_triggered);
-                placementB = new OrderPlacement(paired_uuid, symbol, Constants.BUY, lot_size_b, is_triggered);
-            }*/
         var position_a = traderAccountBUY.Broker() == traderAccountA.Broker() &&
             traderAccountBUY.AccountNumber() == traderAccountA.AccountNumber()
             ? Constants_1.Constants.BUY
@@ -213,14 +175,69 @@ var SyncService = /** @class */ (function () {
             traderAccountBUY.AccountNumber() == traderAccountB.AccountNumber()
             ? Constants_1.Constants.BUY
             : Constants_1.Constants.SELL;
-        placementA = new OrderPlacement_1.OrderPlacement(paired_uuid, symbol, position_a, lot_size_a, is_triggered);
-        placementB = new OrderPlacement_1.OrderPlacement(paired_uuid, symbol, position_b, lot_size_b, is_triggered);
-        traderAccountA.SyncPlacingOrders.set(paired_uuid, placementA);
-        traderAccountB.SyncPlacingOrders.set(paired_uuid, placementB);
-        //traderAccountBUY.PlaceOrder(placementA); //old
-        //traderAccountBUY.Peer().PlaceOrder(placementB);//old
-        traderAccountA.ValidatePlaceOrder(placementA); //new
-        traderAccountB.ValidatePlaceOrder(placementB); //new
+        var max_percent = max_percent_diff_in_account_balances;
+        if (!traderAccountA.ValidatePlaceOrder(symbol, lot_size_a, max_percent, is_triggered)
+            || !traderAccountB.ValidatePlaceOrder(symbol, lot_size_b, max_percent, is_triggered)) {
+            return;
+        }
+        var paired_uuid_arr = new Array();
+        var trade_split_group_id_a = SyncUtil_1.SyncUtil.Unique();
+        var trade_split_group_id_b = SyncUtil_1.SyncUtil.Unique();
+        for (var i = 0; i < trade_split_count; i++) {
+            var paired_uuid = SyncUtil_1.SyncUtil.Unique();
+            var placementA = null;
+            var placementB = null;
+            placementA = new OrderPlacement_1.OrderPlacement(paired_uuid, symbol, position_a, lot_size_a, trade_split_group_id_a, trade_split_count, is_triggered);
+            placementB = new OrderPlacement_1.OrderPlacement(paired_uuid, symbol, position_b, lot_size_b, trade_split_group_id_b, trade_split_count, is_triggered);
+            traderAccountA.SyncPlacingOrders.set(paired_uuid, placementA);
+            traderAccountB.SyncPlacingOrders.set(paired_uuid, placementB);
+            paired_uuid_arr.push(paired_uuid);
+            var aop1 = [traderAccountA, placementA];
+            var aop2 = [traderAccountB, placementB];
+            this.pendingAccountPlacementOrderMap.set(paired_uuid, [aop1, aop2]);
+        }
+        var afterCompleteValidation = function () {
+            //clear off triggers for place order - the strategy does not permit allowing these triggers when any trade is open
+            _this.ClearPlaceOrderTriggers("Placing order has cleared off all pending triggers.");
+            for (var i = 0; i < paired_uuid_arr.length; i++) {
+                _this.handlePendingAccountOrderPlacement(paired_uuid_arr[i], true);
+            }
+        };
+        // check enough money
+        var a_success = false;
+        var b_success = false;
+        var a_prop = {
+            symbol: SyncUtil_1.SyncUtil.GetRelativeSymbol(symbol, traderAccountA.Broker(), traderAccountA.AccountNumber()),
+            position: position_a,
+            lot_size: lot_size_a * trade_split_count // total lot size for the group          
+        };
+        var b_prop = {
+            symbol: SyncUtil_1.SyncUtil.GetRelativeSymbol(symbol, traderAccountB.Broker(), traderAccountB.AccountNumber()),
+            position: position_b,
+            lot_size: lot_size_b * trade_split_count // total lot size for the group          
+        };
+        var command = 'check_enough_money';
+        var err_prefix = is_triggered ? "Trigger validation error!\n" : "";
+        traderAccountA.sendEACommand(command, a_prop, function (response) {
+            a_success = response.success;
+            if (a_success && b_success) { //there is enough money so send
+                afterCompleteValidation();
+            }
+            else if (!a_success) {
+                traderAccountA.SetLastError("" + err_prefix + response.message);
+                main_1.ipcSend("validate-place-order-fail", traderAccountA.Safecopy());
+            }
+        });
+        traderAccountB.sendEACommand(command, b_prop, function (response) {
+            b_success = response.success;
+            if (a_success && b_success) { //there is enough money so send
+                afterCompleteValidation();
+            }
+            else if (!b_success) {
+                traderAccountB.SetLastError("" + err_prefix + response.message);
+                main_1.ipcSend("validate-place-order-fail", traderAccountB.Safecopy());
+            }
+        });
     };
     SyncService.prototype.GetEmailer = function () {
         return this.emailer;
@@ -380,7 +397,7 @@ var SyncService = /** @class */ (function () {
         }
         trigger.is_triggered = true;
         this.SyncPlaceOrders(trigger.buy_trader, trigger.buy_trader, trigger.buy_trader.Peer(), //sell trader
-        trigger.symbol, trigger.buy_lot_size, trigger.sell_lot_size, trigger.max_percent_diff_in_account_balances, true);
+        trigger.symbol, trigger.buy_lot_size, trigger.sell_lot_size, trigger.trade_split_count, trigger.max_percent_diff_in_account_balances, true);
     };
     SyncService.prototype.Handler = function () {
         var _this = this;
@@ -623,98 +640,10 @@ var SyncService = /** @class */ (function () {
             var peerAccount = accPl[1][0];
             var peer_placement = accPl[1][1];
             //now send
-            traderAccount.PlaceOrder(placement);
-            peerAccount.PlaceOrder(peer_placement);
+            traderAccount.PlaceOrder(placement); //old
+            peerAccount.PlaceOrder(peer_placement); //old
         }
         this.pendingAccountPlacementOrderMap.delete(uuid);
-    };
-    SyncService.prototype.OnValidatePlaceOrderResult = function (traderAccount, uuid, spread_cost, required_margin, success, error) {
-        if (traderAccount == null)
-            return;
-        var peerAccount = this.getPeer(traderAccount);
-        if (peerAccount == null)
-            return;
-        var placement = traderAccount.SyncPlacingOrders.get(uuid);
-        var peer_placement = peerAccount.SyncPlacingOrders.get(uuid);
-        if (!success) {
-            traderAccount.SyncPlacingOrders.delete(uuid);
-            peerAccount.SyncPlacingOrders.delete(uuid);
-            main_1.ipcSend("validate-place-order-fail", traderAccount.Safecopy());
-            return;
-        }
-        if (!placement) {
-            //already deleted
-            main_1.ipcSend("validate-place-order-unknown-due-to-delete", traderAccount.Safecopy());
-            return;
-        }
-        placement.SetValidateResult(success, error);
-        placement.SetSpreadCost(spread_cost);
-        placement.SetRequiredMargin(required_margin);
-        if (placement.state == Constants_1.Constants.VALIDATION_SUCCESS) {
-            main_1.ipcSend("validate-place-order-succesful", traderAccount.Safecopy());
-        }
-        if (placement.state != Constants_1.Constants.VALIDATION_SUCCESS ||
-            peer_placement.state != Constants_1.Constants.VALIDATION_SUCCESS) {
-            return; //one done
-        }
-        if (SyncUtil_1.SyncUtil.AppConfigMap.get("show_waning_message_if_loss_is_possible") ==
-            true) {
-            var aop1 = [traderAccount, placement];
-            var aop2 = [peerAccount, peer_placement];
-            this.pendingAccountPlacementOrderMap.set(uuid, [aop1, aop2]);
-            var crashAccount = null;
-            var possibleLossA = this.HedgePossibleLoss(traderAccount, placement, peer_placement);
-            var possibleLossB = this.HedgePossibleLoss(peerAccount, peer_placement, placement);
-            var possible_loss = possibleLossA < possibleLossB ? possibleLossA : possibleLossB;
-            if (possibleLossA < possibleLossB) {
-                possible_loss = possibleLossA;
-                crashAccount = traderAccount;
-            }
-            else {
-                possible_loss = possibleLossB;
-                crashAccount = peerAccount;
-            }
-            if (possible_loss < 0) {
-                if (!placement.is_triggered) {
-                    main_1.ipcSend("show-place-order-warning-alert", {
-                        warning: this.LossWaringMessage(crashAccount, possible_loss),
-                        uuid: uuid,
-                    });
-                }
-                else {
-                    //for the case of triggered order no need for warning alert. Just reject the order
-                    main_1.ipcSend("place-order-trigger-rejected", this.LossRejectionMessage(crashAccount, possible_loss));
-                }
-            }
-            else {
-                this.handlePendingAccountOrderPlacement(uuid, true);
-            }
-        }
-        else {
-            this.handlePendingAccountOrderPlacement(uuid, true);
-        }
-        return; //both done
-    };
-    SyncService.prototype.HedgePossibleLoss = function (account, placement, peer_placement) {
-        if (!account.Peer())
-            return 0;
-        var peerAccount = account.Peer();
-        var stopout_amount = (account.AccountStopoutLevel() * placement.required_margin) / 100;
-        var eatable_margin = placement.required_margin - stopout_amount;
-        var eatable_amount = account.AccountCredit() < eatable_margin
-            ? account.AccountCredit()
-            : eatable_margin; //smaller amount is eatable
-        var possible_loss = eatable_amount -
-            Math.abs(placement.spread_cost) -
-            Math.abs(peer_placement.spread_cost);
-        possible_loss = parseFloat(possible_loss.toFixed(2));
-        return possible_loss;
-    };
-    SyncService.prototype.LossWaringMessage = function (crashAccount, possible_loss) {
-        return "You may loss up to " + possible_loss + " " + crashAccount.AccountCurrency() + " on this sync trading position if account " + crashAccount.AccountNumber() + " on " + crashAccount.Broker() + " crashes.";
-    };
-    SyncService.prototype.LossRejectionMessage = function (crashAccount, possible_loss) {
-        return "Place order trigger was rejected because of possible loss of up to " + possible_loss + " " + crashAccount.AccountCurrency() + " on this sync trading position if account " + crashAccount.AccountNumber() + " on " + crashAccount.Broker() + " crashes.";
     };
     SyncService.prototype.OnPlaceOrderResult = function (traderAccount, ticket, uuid, success) {
         if (traderAccount == null)
@@ -742,6 +671,8 @@ var SyncService = /** @class */ (function () {
         var order = traderAccount.GetOrder(ticket);
         if (order) {
             order.SetCopyable(false);
+            order.SetGroupId(placement.trade_split_group_id);
+            order.SetGroupOderCount(placement.trade_split_count);
         }
         //if peer did not complete with success status then focibly close this order
         if (peer_placement.OperationCompleteStatus() == OrderPlacement_1.OrderPlacement.COMPLETE_FAIL) {
@@ -999,10 +930,11 @@ var SyncService = /** @class */ (function () {
         this.SendModifyToPeer(account);
     };
     SyncService.prototype.HandleRead = function (account, data) {
+        var _a;
         if (data == null || data.length == 0)
             return;
         if (data != "ping=pong") {
-            console.log("[" + account.StrID() + "] ", data); //TESTING!!!
+            //console.log(`[${account.StrID()}] `, data); //TESTING!!!
         }
         var intro = false;
         var is_stoploss_changed = false;
@@ -1014,7 +946,6 @@ var SyncService = /** @class */ (function () {
         var is_close_trades = false;
         var is_modify_trades = false;
         var is_account_balance_changed = false;
-        var validate_place_order_success = null; // yes must be null since we care about three state: null, true or false
         var place_order_success = null; // yes must be null since we care about three state: null, true or false
         var copy_success = null; // yes must be null since we care about three state: null, true or false
         var own_close_success = null; // yes must be null since we care about three state: null, true or false
@@ -1032,10 +963,33 @@ var SyncService = /** @class */ (function () {
         var fire_market_opened = false;
         var spread_cost = 0;
         var required_margin = 0;
+        var symbol = "";
+        var raw_symbol = "";
+        var command_id = "";
+        var command = ""; // name of the command
+        var command_response = "";
+        var command_success = false;
         for (var i = 0; i < token.length; i++) {
             var split = token[i].split("=");
             var name = split[0];
             var value = split[1];
+            if (name == "command") {
+                command = value;
+            }
+            if (name == "command_id") {
+                command_id = value;
+            }
+            if (name == "command_response") {
+                command_response = value;
+            }
+            if (name == "command_success") {
+                command_success = value === "true";
+                (_a = account.EACommandList.get(command_id)) === null || _a === void 0 ? void 0 : _a.callback({
+                    message: command_response,
+                    success: command_success
+                });
+                account.EACommandList.delete(command_id);
+            }
             if (name == "is_market_closed") {
                 if (value == "true") {
                     //check if the previous state was open
@@ -1107,8 +1061,38 @@ var SyncService = /** @class */ (function () {
             if (name == "account_swap_per_day") {
                 account.SetAccountSwapPerDay(parseFloat(value));
             }
+            if (name == "terminal_connected") {
+                account.SetTerminalConnected(value === "true");
+            }
+            if (name == "only_trade_with_credit") {
+                account.SetOnlyTradeWithCredit(value === "true");
+            }
             if (name == "chart_symbol") {
                 account.SetChartSymbol(value);
+            }
+            if (name == "chart_symbol_trade_allowed") {
+                account.SetChartSymbolTradeAllowed(value === "true");
+            }
+            if (name == "chart_symbol_max_lot_size") {
+                account.SetChartSymbolMaxLotSize(parseFloat(value));
+            }
+            if (name == "chart_symbol_min_lot_size") {
+                account.SetChartSymbolMinLotSize(parseFloat(value));
+            }
+            if (name == "chart_symbol_tick_value") {
+                account.SetChartSymbolTickValue(parseFloat(value));
+            }
+            if (name == "chart_symbol_swap_long") {
+                account.SetChartSymbolSwapLong(parseFloat(value));
+            }
+            if (name == "chart_symbol_swap_short") {
+                account.SetChartSymbolSwapShort(parseFloat(value));
+            }
+            if (name == "chart_symbol_trade_units") {
+                account.SetChartSymbolTradeUnits(parseFloat(value));
+            }
+            if (name == "chart_symbol_spread") {
+                account.SetChartSymbolSpread(parseFloat(value));
             }
             if (name == "chart_market_price") {
                 account.SetChartMarketPrice(parseFloat(value));
@@ -1154,9 +1138,15 @@ var SyncService = /** @class */ (function () {
                 origin_ticket = parseInt(value);
             }
             if (name == "symbol") {
+                symbol = value; //important - used in this loop
                 account.GetOrder(ticket).symbol = value;
             }
+            if (name == "symbol_commission_per_lot") {
+                account.SetSymbolCommissionPerLot(symbol, parseFloat(value));
+                account.SetSymbolCommissionPerLot(raw_symbol, parseFloat(value));
+            }
             if (name == "raw_symbol") {
+                raw_symbol = value; //important - used in this loop
                 account.GetOrder(ticket).raw_symbol = value;
             }
             if (name == "position") {
@@ -1189,6 +1179,7 @@ var SyncService = /** @class */ (function () {
                 order.close_time = Number.parseInt(value);
                 if (!was_close && order.close_time > 0) {
                     //just closed
+                    account.SendCloseToGroup(ticket); // also close all orders in same group
                     this.emailer.OrderCloseNotify(account, order);
                 }
             }
@@ -1245,9 +1236,6 @@ var SyncService = /** @class */ (function () {
             }
             if (name == "modify_stoploss_success") {
                 modify_stoploss_success = value;
-            }
-            if (name == "validate_place_order_success") {
-                validate_place_order_success = value;
             }
             if (name == "place_order_success") {
                 place_order_success = value;
@@ -1323,12 +1311,6 @@ var SyncService = /** @class */ (function () {
         }
         if (is_account_balance_changed) {
             main_1.ipcSend("account-balance-changed", account.Safecopy());
-        }
-        if (validate_place_order_success == "true") {
-            this.OnValidatePlaceOrderResult(account, uuid, spread_cost, required_margin, true, error);
-        }
-        if (validate_place_order_success == "false") {
-            this.OnValidatePlaceOrderResult(account, uuid, spread_cost, required_margin, false, error);
         }
         if (place_order_success == "true") {
             var result = this.OnPlaceOrderResult(account, ticket, uuid, true);

@@ -67,8 +67,8 @@ var Order = /** @class */ (function () {
     Order.prototype.IsCopyable = function () { return this.is_copyable; };
     ;
     Order.prototype.SetDefaultSpread = function (default_spread) { this.default_spread = default_spread; };
-    Order.prototype.Spread = function (broker) {
-        this.spread = SyncUtil_1.SyncUtil.SymbolSpread(broker, this.raw_symbol, this.point);
+    Order.prototype.Spread = function (broker, account_number) {
+        this.spread = SyncUtil_1.SyncUtil.SymbolSpread(broker, account_number, this.raw_symbol, this.point);
         return this.spread > 0 ? this.spread : this.default_spread;
     };
     Order.prototype.SetGroupId = function (trade_split_group_id) {
