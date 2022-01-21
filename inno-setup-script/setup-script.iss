@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Sync Trading Manager"
-#define MyAppVersion "3.0.0"
+#define MyAppVersion "7.0.0"
 #define MyAppPublisher "Chuks Alimele"
 #define MyAppExeName "sync-trading-js.exe"
 

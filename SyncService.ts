@@ -346,7 +346,7 @@ export class SyncService {
     }
 
 
-    var command = 'check_enough_money';
+    var command = Constants.CMD_CHECK_ENOUGH_MONEY;
 
     var err_prefix = is_triggered? "Trigger validation error!\n" : "";
 
@@ -387,7 +387,7 @@ export class SyncService {
     });
   }
 
-  private IsAlive(traderAccount: TraderAccount): boolean {
+  private CheckAlive(traderAccount: TraderAccount): boolean {
     if (traderAccount.IsConnected()) return true;
 
     //at this piont the connection is closed
@@ -451,30 +451,32 @@ export class SyncService {
   private eachAccount(callback: Function) {
     try {
       for (let unpaired of this.unpairedAccounts) {
-        if (this.IsAlive(unpaired)) {
+        if (this.CheckAlive(unpaired)) {
           callback(unpaired);
         }
       }
 
       for (let pair of this.pairedAccounts) {
-        if (this.IsAlive(pair[0])) {
+        if (this.CheckAlive(pair[0])) {
           callback(pair[0]);
         }
 
-        if (this.IsAlive(pair[1])) {
+        if (this.CheckAlive(pair[1])) {
           callback(pair[1]);
         }
       }
     } catch (ex) {
       console.log(ex);
     }
+
+    return;
   }
 
   private eachPairedAccount(callback: Function) {
     try {
       for (let pair of this.pairedAccounts) {
-        this.IsAlive(pair[0]);
-        this.IsAlive(pair[1]);
+        this.CheckAlive(pair[0]);
+        this.CheckAlive(pair[1]);
         callback(pair[0]);
         callback(pair[1]);
       }
@@ -765,9 +767,36 @@ export class SyncService {
     }
   }
 
-  private handleDuplicateEA(traderAccount: TraderAccount) {
-    //TODO
-    console.log("TODO Duplicate EA detected!");
+  private checkDuplicateEA(traderAccount: TraderAccount) {
+
+    
+    try {
+      for (let unpaired of this.unpairedAccounts) {
+        if (this.CheckAlive(unpaired)) {
+          if(traderAccount !== unpaired && traderAccount.StrID() === unpaired.StrID()){
+              return true;
+          }
+        }
+      }
+
+      for (let pair of this.pairedAccounts) {
+        if (this.CheckAlive(pair[0])) {
+          if(traderAccount !== pair[0] && traderAccount.StrID() === pair[0].StrID()){
+              return true;
+          }          
+        }
+
+        if (this.CheckAlive(pair[1])) {
+          if(traderAccount !== pair[1] && traderAccount.StrID() === pair[1].StrID()){
+              return true;
+          }          
+        }
+      }
+    } catch (ex) {
+      console.log(ex);
+    }
+
+    return false;
   }
 
   public getTraderAccount(
@@ -855,8 +884,8 @@ export class SyncService {
 
     if (
       !success &&
-      error != Constants.trade_condition_not_changed &&
-      error != Constants.no_changes
+      error != Constants.ERR_TRADE_CONDITION_NOT_CHANGED &&
+      error != Constants.ERR_NO_CHANGES
     ) {
       var peer: TraderAccount = traderAccount.Peer();
       if (peer) {
@@ -887,8 +916,8 @@ export class SyncService {
 
     if (
       !success &&
-      error != Constants.trade_condition_not_changed &&
-      error != Constants.no_changes
+      error != Constants.ERR_TRADE_CONDITION_NOT_CHANGED &&
+      error != Constants.ERR_NO_CHANGES
     ) {
       var peer: TraderAccount = traderAccount.Peer();
       if (peer) {
@@ -1788,7 +1817,12 @@ export class SyncService {
 
     if (intro) {
       if (account.Broker() && account.AccountNumber()) {
-        ipcSend("intro", account.Safecopy());
+        if(this.checkDuplicateEA(account)){
+          account.SetLastError(Constants.ERR_DUPLICATE_EA);
+          account.sendEACommand(Constants.CMD_DUPLICATE_EA);
+        }else{
+          ipcSend("intro", account.Safecopy());
+        }        
       } else {
         account.SendGetIntro();
       }

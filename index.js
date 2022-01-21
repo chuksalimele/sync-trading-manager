@@ -45,7 +45,7 @@ var alertCollection = [];
 
 alertify.defaults.transition = "zoom"; //options are: slide, pulse, flipx, flipy, zoom, fade
 alertify.defaults.notifier.delay = 20;
-(alertify.defaults.notifier.position = "bottom-center"),
+(alertify.defaults.notifier.position = "bottom-right"),
   $(document).ready(function () {
     $(".menu .item").tab();
 

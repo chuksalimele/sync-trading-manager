@@ -691,13 +691,16 @@ export class TraderAccount {
         return parseFloat(stoput_pip_move.toFixed(2));
     }
     
-    public sendEACommand(commmand: string, prop: object, callback: Function){
+    public sendEACommand(commmand: string, prop: object = {}, callback: Function = null){
         var command_id:string = SyncUtil.Unique();
         var cmdObj = {
             name : commmand,
             callback: callback
         }
-        this.EACommandList.set(command_id, cmdObj);
+        if(callback!== null){
+            this.EACommandList.set(command_id, cmdObj);
+        }
+        
         this.SendData(SyncUtil.CommandPacket(cmdObj.name, command_id, prop));
     }
 
