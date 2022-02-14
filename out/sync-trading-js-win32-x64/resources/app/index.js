@@ -2132,6 +2132,7 @@ function hideCenterContents() {
   $("#center_content_pairing").hide();
   $("#center_content_metrics").hide();
   $("#center_content_output").hide();
+  $("#center_content_install_ea").hide();  
   $("#center_content_settings").hide();
 
   $("#btn_main").removeClass("active");
@@ -2139,7 +2140,9 @@ function hideCenterContents() {
   $("#btn_pairing").removeClass("active");
   $("#btn_metrics").removeClass("active");
   $("#btn_output").removeClass("active");
+  $("#btn_install_ea").removeClass("active");
   $("#btn_settings").removeClass("active");
+  
 }
 
 function showMain() {
