@@ -163,7 +163,7 @@ function Main() {
         win.removeMenu();//remove the default menu
 
         // Open the DevTools. 
-        win.webContents.openDevTools()//UNCOMMENT IN PRODUCTION TO HIDE DEBUGGER VIEW
+        //win.webContents.openDevTools()//UNCOMMENT IN PRODUCTION TO HIDE DEBUGGER VIEW
 
         //Quit app when main BrowserWindow Instance is closed
         win.on('closed', function () {
