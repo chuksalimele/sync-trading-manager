@@ -1,5 +1,6 @@
-import { ipcSend } from "./main";
-import { App, fs, path, mkdirp } from "./app";
+import guiMsgBox from "./main";
+import { ipcSend, Shutdown }  from "./main";
+import { App, fs, path, mkdirp, readline } from "./app";
 import { TraderAccount } from "./TraderAccount";
 import { Order } from "./Order";
 import { SyncTraderException } from "./SyncTraderException";
@@ -17,6 +18,7 @@ import { Constants } from "./Constants";
 import { OrderPlacement } from "./OrderPlacement";
 import { Emailer } from "./Emailer";
 import { PlaceOrderTrigger } from "./PlaceOrderTrigger";
+import { InstallController } from "./InstallController";
 
 export class SyncService {
   private pairedAccounts: Array<PairAccount> = new Array();
@@ -68,9 +70,13 @@ export class SyncService {
 
   private emailer: Emailer = new Emailer();
 
+  private HandlertID: any;
+
   public Start() {
     try {
       SyncUtil.LoadAappConfig();
+
+      InstallController.Init();
 
       //first load the sync state of the trades
       var file = Config.SYNC_LOG_FILE;
@@ -125,7 +131,7 @@ export class SyncService {
     this.CheckRoutineRefreshAccountInfoInterval();
 
     //run the service handler
-    setImmediate(this.Handler.bind(this));
+    this.HandlertID = setImmediate(this.Handler.bind(this));
   }
 
   private CheckPlaceOrderTriggerPermission(trigger: PlaceOrderTrigger) {
@@ -416,13 +422,12 @@ export class SyncService {
     force_remove: boolean = false
   ) {
     if (!force_remove && traderAccount.IsSyncingInProgress()) {
-      ipcSend("could-not-remove-pairing", {
-        account: traderAccount.Safecopy(),
-        feedback:
-          `Could not remove pairing of ${traderAccount.Broker()}, ${traderAccount.AccountNumber()}.\n` +
-          `Action denied because order syncing was detected!\n` +
-          `It is unsafe to remove pairing when syncing is in progress except if it arised from account disconnection.`,
-      });
+      guiMsgBox.alert({
+        title:'Error',
+        message:`Could not remove pairing of ${traderAccount.Broker()}, ${traderAccount.AccountNumber()}.\n` +
+        `Action denied because order syncing was detected!\n` +
+        `It is unsafe to remove pairing when syncing is in progress except if it arised from account disconnection.`,
+      })
 
       return;
     }
@@ -446,6 +451,64 @@ export class SyncService {
         break;
       }
     }
+  }
+
+  public getAccounts():Array<TraderAccount>{
+      return this.getAccounts0();
+  }
+
+  public getMT4Accounts():Array<TraderAccount>{
+    return this.getAccounts0('MT4');
+  }
+
+  public getMT5Accounts():Array<TraderAccount>{
+    return this.getAccounts0('MT5');
+  }
+
+  private getAccounts0(mt: string = null):Array<TraderAccount>{
+    var accounts = [];
+    for (let unpaired of this.unpairedAccounts) {
+
+      if (this.CheckAlive(unpaired)) {
+
+        if(mt === 'MT4' && unpaired.IsMT4()){
+          accounts.push(unpaired);
+        }else if(mt === 'MT5' && unpaired.IsMT5()){
+          accounts.push(unpaired);
+        }else{
+          accounts.push(unpaired);
+        }
+
+      }
+
+    }
+
+    for (let pair of this.pairedAccounts) {
+      
+      var pair0 = pair[0];
+      var pair1 = pair[1];
+
+      if (this.CheckAlive(pair0)) {
+        if(mt === 'MT4' && pair0.IsMT4()){
+          accounts.push(pair0);
+        }else if(mt === 'MT5' && pair0.IsMT5()){
+          accounts.push(pair0);
+        }else{
+          accounts.push(pair0);
+        }        
+      }
+
+      if (this.CheckAlive(pair1)) {
+        if(mt === 'MT4' && pair1.IsMT4()){
+          accounts.push(pair1);
+        }else if(mt === 'MT5' && pair1.IsMT5()){
+          accounts.push(pair1);
+        }else{
+          accounts.push(pair1);
+        }
+      }
+    }
+    return accounts;
   }
 
   private eachAccount(callback: Function) {
@@ -585,6 +648,11 @@ export class SyncService {
     );
   }
 
+  public Shutdown(){
+    clearImmediate(this.HandlertID);
+    Shutdown(this.getAccounts());    
+  }
+
   private Handler() {
     this.CheckRoutineSyncChecksInterval();
     this.CheckRoutineRefreshAccountInfoInterval();
@@ -603,7 +671,8 @@ export class SyncService {
 
     this.HandlePlaceOrderTriggers();
 
-    setImmediate(this.Handler.bind(this));
+    this.HandlertID = setImmediate(this.Handler.bind(this));
+    
   }
 
   private SendCopyToPeer(traderAccount: TraderAccount) {
@@ -625,86 +694,92 @@ export class SyncService {
   ) {
     if (traderAccount == null || peerAccount == null) {
       if (is_gui) {
-        ipcSend(
-          "paired-fail",
-          "one or two of the account to pair with is null."
-        );
+        guiMsgBox.alert({
+          title: 'Failed',
+          message:'One or two of the account to pair with is null.'
+        });
+
       }
       return;
     }
 
     if (!traderAccount.IsKnown() || !peerAccount.IsKnown()) {
       if (is_gui) {
-        ipcSend(
-          "paired-fail",
-          "one or two of the account to pair with is unknown - possibly no broker name or account number"
-        );
+        guiMsgBox.alert({
+          title: 'Failed',
+          message:'one or two of the account to pair with is unknown - possibly no broker name or account number'
+        });
+
       }
       return;
     }
 
     if (traderAccount.Version() != peerAccount.Version()) {
       if (is_gui) {
-        ipcSend(
-          "paired-fail",
-          `EA version of [${traderAccount.Broker()}, ${traderAccount.AccountNumber()}] (${traderAccount.Version()}) mismatch with that of [${peerAccount.Broker()}, ${peerAccount.AccountNumber()}] (${peerAccount.Version()})  - version must be the same`
-        );
+        guiMsgBox.alert({
+          title: 'Failed',
+          message:`EA version of [${traderAccount.Broker()}, ${traderAccount.AccountNumber()}] (${traderAccount.Version()}) mismatch with that of [${peerAccount.Broker()}, ${peerAccount.AccountNumber()}] (${peerAccount.Version()})  - version must be the same`
+        });
       }
       return;
     }
 
     if (traderAccount.IsLiveAccount() === null) {
       if (is_gui) {
-        ipcSend(
-          "paired-fail",
-          `account type of [${traderAccount.Broker()}, ${traderAccount.AccountNumber()}] is unknown  - must be live or demo`
-        );
+        guiMsgBox.alert({
+          title: 'Failed',
+          message:`account type of [${traderAccount.Broker()}, ${traderAccount.AccountNumber()}] is unknown  - must be live or demo`
+        });
       }
       return;
     }
 
     if (peerAccount.IsLiveAccount() === null) {
+      
       if (is_gui) {
-        ipcSend(
-          "paired-fail",
-          `account type of [${peerAccount.Broker()}, ${peerAccount.AccountNumber()}] is unknown  - must be live or demo`
-        );
+        guiMsgBox.alert({
+          title: 'Failed',
+          message:`account type of [${peerAccount.Broker()}, ${peerAccount.AccountNumber()}] is unknown  - must be live or demo`
+        });
+  
       }
       return;
     }
 
     if (traderAccount.IsLiveAccount() !== peerAccount.IsLiveAccount()) {
       if (is_gui) {
-        ipcSend(
-          "paired-fail",
-          "cannot pair up two accounts of different types - they both must be live or demo"
-        );
+        guiMsgBox.alert({
+          title: 'Failed',
+          message:'cannot pair up two accounts of different types - they both must be live or demo'
+        });
       }
       return;
     }
 
     if (this.IsPaired(traderAccount)) {
       if (is_gui) {
-        ipcSend(
-          "already-paired",
-          `[${traderAccount.Broker()}, ${traderAccount.AccountNumber()}] ` +
-            `is already paired with [${traderAccount
-              .Peer()
-              .Broker()}, ${traderAccount.Peer().AccountNumber()}]!`
-        );
+        guiMsgBox.alert({
+          title: 'Not Allowed',
+          message:`[${traderAccount.Broker()}, ${traderAccount.AccountNumber()}] ` +
+          `is already paired with [${traderAccount
+            .Peer()
+            .Broker()}, ${traderAccount.Peer().AccountNumber()}]!`
+        });
+
       }
       return;
     }
 
     if (this.IsPaired(peerAccount)) {
       if (is_gui) {
-        ipcSend(
-          "already-paired",
-          `[${peerAccount.Broker()}, ${peerAccount.AccountNumber()}] ` +
-            `is already paired with [${peerAccount
-              .Peer()
-              .Broker()}, ${peerAccount.Peer().AccountNumber()}]!`
-        );
+        guiMsgBox.alert({
+          title: 'Not Allowed',
+          message:`[${peerAccount.Broker()}, ${peerAccount.AccountNumber()}] ` +
+          `is already paired with [${peerAccount
+            .Peer()
+            .Broker()}, ${peerAccount.Peer().AccountNumber()}]!`
+        });
+
       }
       return;
     }
@@ -720,14 +795,15 @@ export class SyncService {
         traderAccount.AccountName().toLowerCase() !=
           peerAccount.AccountName().toLowerCase()
       ) {
-        if (is_gui) {
-          ipcSend(
-            "paired-fail",
-            `Your app configuration settings does not permit pairing two live accounts with different account name:` +
-              `\n\nBroker: ${traderAccount.Broker()}\nAccount Number: ${traderAccount.AccountNumber()}\nAccount Name: ${traderAccount.AccountName()}` +
-              `\n---------------\nBroker: ${peerAccount.Broker()}\nAccount Number: ${peerAccount.AccountNumber()}\nAccount Name: ${peerAccount.AccountName()}` +
-              `\n\nHint: You can deselect the option in your app settings to remove this restriction.`
-          );
+        if (is_gui) {          
+          guiMsgBox.alert({
+            title: 'Failed', 
+            message: `Your app configuration settings does not permit pairing two live accounts with different account name:` +
+                  `\n\nBroker: ${traderAccount.Broker()}\nAccount Number: ${traderAccount.AccountNumber()}\nAccount Name: ${traderAccount.AccountName()}` +
+                  `\n---------------\nBroker: ${peerAccount.Broker()}\nAccount Number: ${peerAccount.AccountNumber()}\nAccount Name: ${peerAccount.AccountName()}` +
+                  `\n\nHint: You can deselect the option in your app settings to remove this restriction.`
+          });
+
         }
         return;
       }
@@ -970,9 +1046,18 @@ export class SyncService {
       var peerAccount: TraderAccount = accPl[1][0];
       var peer_placement: OrderPlacement = accPl[1][1];
 
-      //now send
-      traderAccount.PlaceOrder(placement);//old
-      peerAccount.PlaceOrder(peer_placement);//old
+      if(placement.position = peer_placement.position){
+        //Shocking!!! this error has occurred before so we put this measure to track and prevent it
+        guiMsgBox.alert({
+          title:'Invalid',
+          message:`The position of both accounts cannot be the same - ${placement.position}`
+        })  
+      }else{        
+        //now send
+        traderAccount.PlaceOrder(placement);//old
+        peerAccount.PlaceOrder(peer_placement);//old        
+      }
+
     }
 
     this.pendingAccountPlacementOrderMap.delete(uuid);
@@ -1436,6 +1521,10 @@ export class SyncService {
         });
         account.EACommandList.delete(command_id);
       }
+
+      if(name == "ea_executable_file"){
+        account.SetEAExecutableFile(value);
+      }      
 
       if (name == "is_market_closed") {
         if (value == "true") {

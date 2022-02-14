@@ -167,7 +167,7 @@ var Emailer = /** @class */ (function () {
             +
                 this.syncOrdersHTML(account);
         //send the mail when the stoploss and target of both orders are set
-        SyncUtil_1.SyncUtil.WaitAsyncUntil(this.send.bind(this, subject, body), function () { return order.stoploss > 0 && order.target > 0 && peer_order.stoploss > 0 && peer_order.target > 0; });
+        SyncUtil_1.SyncUtil.WaitAsyncWhile(this.send.bind(this, subject, body), function () { return order.stoploss == 0 || order.target == 0 || peer_order.stoploss == 0 || peer_order.target == 0; });
     };
     Emailer.prototype.OrderCloseNotify = function (account, order) {
         this.send("SYNC TRADE MANAGER - ORDER " + (order.force ? 'FORCIBLY ' : '') + "CLOSED NOTIFICATION", "<h3>Order " + (order.force ? 'Forcibly ' : '') + "Closed Notification</h3>\n                " + (order.force ?

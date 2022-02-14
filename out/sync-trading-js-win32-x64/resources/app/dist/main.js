@@ -1,19 +1,122 @@
 'use strict';
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ipcSend = void 0;
+exports.GetSyncService = exports.ipcSend = exports.Shutdown = void 0;
 Object.defineProperty(exports, "__esModule", { value: true });
 var app_1 = require("./app");
 var Config_1 = require("./Config");
 var Constants_1 = require("./Constants");
+var InstallController_1 = require("./InstallController");
 var PlaceOrderTrigger_1 = require("./PlaceOrderTrigger");
 var SyncUtil_1 = require("./SyncUtil");
 var _a = require('electron'), app = _a.app, ipcMain = _a.ipcMain, BrowserWindow = _a.BrowserWindow;
 var win;
 var mainApp = new app_1.App();
+var Shutdown = function (accounts) {
+    mainApp.Close(accounts);
+};
+exports.Shutdown = Shutdown;
 var ipcSend = function (event, data) {
-    win.webContents.send(event, data);
+    var _a;
+    (_a = win === null || win === void 0 ? void 0 : win.webContents) === null || _a === void 0 ? void 0 : _a.send(event, data);
 };
 exports.ipcSend = ipcSend;
+var GuiMsgBox = /** @class */ (function () {
+    function GuiMsgBox() {
+        this.promptMessageMap = new Map();
+        this.confirmMessageMap = new Map();
+        this.alertMessageMap = new Map();
+        this.notifyMessageMap = new Map();
+    }
+    GuiMsgBox.prototype.prompt = function (prop) {
+        var id = SyncUtil_1.SyncUtil.Unique();
+        this.promptMessageMap.set(id, __assign({ id: id }, prop));
+        exports.ipcSend('gui-prompt-box', this.makeJsonable(this.promptMessageMap.get(id)));
+    };
+    GuiMsgBox.prototype.confirm = function (prop) {
+        var id = SyncUtil_1.SyncUtil.Unique();
+        this.confirmMessageMap.set(id, __assign({ id: id }, prop));
+        exports.ipcSend('gui-confirm-box', this.makeJsonable(this.confirmMessageMap.get(id)));
+    };
+    GuiMsgBox.prototype.alert = function (prop) {
+        var id = SyncUtil_1.SyncUtil.Unique();
+        this.alertMessageMap.set(id, __assign({ id: id }, prop));
+        exports.ipcSend('gui-alert-box', this.makeJsonable(this.alertMessageMap.get(id)));
+    };
+    GuiMsgBox.prototype.notify = function (prop) {
+        var id = SyncUtil_1.SyncUtil.Unique();
+        this.notifyMessageMap.set(id, __assign({ id: id }, prop));
+        exports.ipcSend('gui-notify-box', this.makeJsonable(this.notifyMessageMap.get(id)));
+    };
+    GuiMsgBox.prototype.feedback = function (id, result) {
+        var _a, _b, _c, _d, _e, _f, _g, _h;
+        if (result.type === 'prompt') {
+            switch (result.action) {
+                case 'input':
+                    {
+                        (_a = this.promptMessageMap.get(id)) === null || _a === void 0 ? void 0 : _a.input(result.value);
+                    }
+                    break;
+                case 'cancel':
+                    {
+                        (_b = this.promptMessageMap.get(id)) === null || _b === void 0 ? void 0 : _b.cancel();
+                    }
+                    break;
+            }
+            this.promptMessageMap.delete(id);
+        }
+        else if (result.type === 'confirm') {
+            switch (result.action) {
+                case 'yes':
+                    {
+                        (_c = this.confirmMessageMap.get(id)) === null || _c === void 0 ? void 0 : _c.yes(result.value);
+                    }
+                    break;
+                case 'no':
+                    {
+                        (_d = this.confirmMessageMap.get(id)) === null || _d === void 0 ? void 0 : _d.no();
+                    }
+                    break;
+            }
+            this.confirmMessageMap.delete(id);
+        }
+        else if (result.type === 'alert') {
+            (_f = (_e = this.alertMessageMap.get(id)) === null || _e === void 0 ? void 0 : _e.close) === null || _f === void 0 ? void 0 : _f.call(_e);
+            this.alertMessageMap.delete(id);
+        }
+        else if (result.type === 'notify') {
+            (_h = (_g = this.notifyMessageMap.get(id)) === null || _g === void 0 ? void 0 : _g.close) === null || _h === void 0 ? void 0 : _h.call(_g);
+            this.notifyMessageMap.delete(id);
+        }
+    };
+    GuiMsgBox.prototype.makeJsonable = function (obj) {
+        var jsobj = __assign({}, obj);
+        for (var n in jsobj) {
+            if (typeof jsobj[n] === 'function') {
+                jsobj[n] = undefined;
+            }
+        }
+        return jsobj;
+    };
+    return GuiMsgBox;
+}());
+var guiMsgBox = new GuiMsgBox();
+exports.default = guiMsgBox;
+function GetSyncService() {
+    return mainApp.GetSyncService();
+}
+exports.GetSyncService = GetSyncService;
+;
 Main();
 function Main() {
     //The easiest way to handle these arguments and stop your app launching multiple times
@@ -35,7 +138,7 @@ function Main() {
         win.loadFile(__dirname + "/../index.html");
         win.removeMenu(); //remove the default menu
         // Open the DevTools. 
-        //win.webContents.openDevTools()//UNCOMMENT IN PRODUCTION TO HIDE DEBUGGER VIEW
+        win.webContents.openDevTools(); //UNCOMMENT IN PRODUCTION TO HIDE DEBUGGER VIEW
         //Quit app when main BrowserWindow Instance is closed
         win.on('closed', function () {
             app.quit();
@@ -64,6 +167,20 @@ function Main() {
     });
     ipcMain.on('refresh-sync', function (event, arg) {
         mainApp.GetSyncService().RevalidateSyncAll();
+    });
+    ipcMain.on('gui-msg-box-feedback', function (event, obj) {
+        guiMsgBox.feedback(obj.id, obj);
+    });
+    ipcMain.on('ea-install-file', function (event, obj) {
+        var immediate = !!(obj ? obj.immediate : false); // ensure the value is strictly true of false
+        InstallController_1.InstallController.InstallWith(obj.file_name, immediate);
+    });
+    ipcMain.on('ea-download-install', function (event, obj) {
+        var immediate = !!(obj ? obj.immediate : false); // ensure the value is strictly true of false
+        InstallController_1.InstallController.InstallEAUpdate(immediate);
+    });
+    ipcMain.on('download-reinstall-all', function (event, obj) {
+        InstallController_1.InstallController.ReInstallAll();
     });
     ipcMain.on('pair-accounts', function (event, arg) {
         var service = mainApp.GetSyncService();

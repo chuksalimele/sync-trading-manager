@@ -3,6 +3,8 @@ const ipc = electron.ipcRenderer;
 
 var Version;
 
+var isVersionConflictReported = false;
+
 var NOT_PAIRED = "Not paired";
 var PAIRED = "Paired";
 var DISCONNECTED = "Disconnected";
@@ -41,11 +43,14 @@ var AppConfig = {
 
 var alertCollection = [];
 
+var HideProgresBarTimerId = -1;
+
 //set AlertifyJS defaults - visit the website to see more options
 
 alertify.defaults.transition = "zoom"; //options are: slide, pulse, flipx, flipy, zoom, fade
 alertify.defaults.notifier.delay = 20;
-(alertify.defaults.notifier.position = "bottom-right"),
+alertify.defaults.notifier.position = "bottom-right";
+
   $(document).ready(function () {
     $(".menu .item").tab();
 
@@ -80,7 +85,15 @@ alertify.defaults.notifier.delay = 20;
       $("#center_content_metrics").fadeIn();
       displayMetrics();
     });
+    
+    $("#btn_install_ea").on("click", function () {
+      hideCenterContents();
+      $("#btn_install_ea").addClass("active");
+      $("#center_content_install_ea").fadeIn();
+      displayInstallEA();
+    });
 
+    
     $("#btn_settings").on("click", function () {
       hideCenterContents();
       $("#btn_settings").addClass("active");
@@ -142,6 +155,63 @@ alertify.defaults.notifier.delay = 20;
       }
     });
 
+    $("#install_ea_file_location_btn").on("click", function(){
+      $("#install_ea_file_input").click();
+    })
+
+    $("#install_ea_file_input").on("input", function(){      
+
+      var immediate;
+      confirmBox('Confirm',{
+        onclose: ()=>{
+
+          var obj = {
+            file_name: this.files[0].path,
+            immediate : immediate 
+          }
+          ipc.send("ea-install-file", obj);
+          this.value = null;//clear it
+        }
+      },'<p>Do you want the EA to stop immediately in order to reload with the new installation?</p>'
+      +'<p>If you click \'Yes\' the EA will stop immediately after installation so you can reload it to use the new installation.</p>'
+      +'<p>If you click \'No\' the EA will keep running using the previous installation untill it gets discconnected from service.</p>',
+      ()=>{
+        immediate = true;
+      },()=>{
+        immediate = false;
+      });
+
+    })
+
+    $("#install_ea_download_and_install_update_btn").on("click", function(){
+    
+      var immediate;
+      confirmBox('Confirm',{
+          onclose: ()=>{
+            var obj = {
+              immediate : immediate
+            }
+            
+            if(HideProgresBarTimerId != -1){
+              clearTimeout(HideProgresBarTimerId);
+            }
+          
+            ipc.send("ea-download-install", obj);
+      
+          }
+        },'<p>Do you want the EA to stop immediately in order to reload with the new installation?</p>'
+        +'<p>If you click \'Yes\' the EA will stop immediately after installation so you can reload it to use the new installation.</p>'
+        +'<p>If you click \'No\' the EA will keep running using the previous installation untill it gets discconnected from service.</p>',      
+        ()=>{
+          immediate = true;
+        },()=>{
+          immediate = false;
+        });
+
+      })
+
+    })
+
     $("#show_compute_lot_size_dialog").on("click", function () {      
       
       var account_for_buy_value = $("#place_order_dialog_accounts").dropdown(
@@ -155,6 +225,7 @@ alertify.defaults.notifier.delay = 20;
 
       ComputeLotSize();
     });
+
 
     ipc.send("start-sync", true);
 
@@ -190,6 +261,35 @@ alertify.defaults.notifier.delay = 20;
         var error = `EA version of [${arg.broker}, ${arg.account_number}] (${arg.version}) is incompatible with application version ${Version}. This application may not work properly!`;
         addErrorLog(error);
         alertify.error(error, 0);
+        var is_cancel = true;
+        if(!isVersionConflictReported){
+          confirmBox(
+            "Version Conflict",
+            {
+              onclose: function(){
+                if(is_cancel){
+                  alertBox('Warning', 'Please note that the appplication may not work properly due to existiong version conflict!');
+                }
+              }
+            },
+            "Version confict has been detected. This is mostly due to improper installations.\n\n"
+            +"It is highly recommended you reinstall all packages to eliminate existing version conflict.\n\n"
+            +"Do you want to reinstall all?",
+            function () {
+
+              if(HideProgresBarTimerId != -1){
+                clearTimeout(HideProgresBarTimerId);
+              }
+              
+              ipc.send("download-reinstall-all");
+            },
+            function () {
+              is_cancel = true;
+            }
+          );
+        }
+
+        isVersionConflictReported = true;
       }
 
       if (setAccount(arg)) {
@@ -209,30 +309,6 @@ alertify.defaults.notifier.delay = 20;
       labelAccountStatus(arg, PAIRED);
 
       pairingComponent();
-    });
-
-    ipc.on("paired-fail", function (event, arg) {
-      console.log("paired-fail", arg);
-
-      alertBox("Failed", arg);
-    });
-
-    ipc.on("already-paired", function (event, arg) {
-      console.log("already-paired", arg);
-
-      alertBox("Not Allowed", arg);
-    });
-
-    ipc.on("could-not-remove-pairing", function (event, arg) {
-      console.log("could-not-remove-pairing", arg);
-
-      alertBox("Error", arg.feedback);
-    });
-
-    ipc.on("was-not-paired", function (event, arg) {
-      console.log("was-not-paired", arg);
-
-      alertBox("Error", arg);
     });
 
     ipc.on("unpaired", function (event, arg) {
@@ -778,8 +854,91 @@ alertify.defaults.notifier.delay = 20;
       alertify.error(error);
       displayPlaceOrderTriggers();
     });
-  });
 
+    ipc.on("gui-prompt-box", function (event, arg) {
+
+      var msg_html = `<div style="overflow:auto;">${arg.message}</div>`;
+
+      promptBox(
+        arg.title?arg.title:'Prompt',
+        msg_html,
+        '',
+        function (evt, value) {
+          ipc.send("gui-msg-box-feedback", 
+          {
+            id:arg.id,
+            type:'prompt',
+            action:'input',
+            value: value
+          });
+        },
+        function () {
+          ipc.send("gui-msg-box-feedback", 
+          {
+            id:arg.id,
+            type:'prompt',
+            action:'cancel'
+          });    
+        });        
+    });
+
+    ipc.on("gui-confirm-box", function (event, arg) {
+      var msg_html = `<div style="overflow:auto;">${arg.message}</div>`;
+      confirmBox(
+        arg.title?arg.title:'Confrim',
+        msg_html,
+        function (value) {
+          ipc.send("gui-msg-box-feedback", 
+          {
+            id:arg.id,
+            type:'confirm',
+            action:'yes',
+            value: value.text
+          });
+        },
+        function () {
+          ipc.send("gui-msg-box-feedback", 
+          {
+            id:arg.id,
+            type:'confirm',
+            action:'no'
+          });    
+        });
+    });
+    
+    ipc.on("gui-alert-box", function (event, arg) {
+      var msg_html = `<div style="overflow:auto;">${arg.message}</div>`;
+      alertBox(arg.title?arg.title:'Alert', msg_html, function(){//onclose function
+        ipc.send("gui-msg-box-feedback", 
+          {
+            id:arg.id,
+            type:'alert',
+          });
+      });
+    });
+    
+    
+    ipc.on("gui-notify-box", function (event, arg) {
+
+      var appearance = arg.type =='stm-notify' ? 'width: 100%; height: 100%; padding:10px; border-radius: 5px; background: teal; color: #eee;':''; 
+
+      var msg_html = `<div style="overflow:auto; ${appearance}">${arg.message}</div>`;
+      alertify.notify(msg_html, arg.type, arg.duration, function(){//onclose function
+        ipc.send("gui-msg-box-feedback", 
+          {
+            id:arg.id,
+            type:'notify',
+          });
+      });
+    
+    });
+
+    
+    ipc.on("reinstall-download-progress", function (event, progressObj) {
+      handleDownloadProgress(progressObj);
+    });
+
+    
 function dialogBox(obj) {
   var dialog = alertify[obj.type].apply(alertify, obj.params);
 
@@ -853,6 +1012,123 @@ function mergeObjectTo(fromObj, toObj) {
   return toObj;
 }
 
+//setTimeout(simulateDownloadProgerss, 5000);
+
+function simulateDownloadProgerss(){
+
+
+  var progressObj = {};
+
+   progressObj["SyncTradeClinet.ex4"] = {
+    name : "SyncTradeClinet.ex4",
+    percent: 0,
+    amount: 0,
+    size : 20
+  }
+
+  progressObj["SyncTradeClinet5.ex5"] = {
+    name : "SyncTradeClinet5.ex5",
+    percent: 0,
+    amount: 0,
+    size : 40
+  }
+
+  progressObj["stm-setup.exe"] = {
+    name : "stm-setup.exe",
+    percent: 0,
+    amount: 0,
+    size : 100
+  }
+
+
+  setInterval(()=>{
+
+    
+
+    for(n in progressObj){
+      var p = progressObj[n];
+
+      var increase = true;
+
+      if(p.percent >= 100){
+        increase = false;
+      }
+
+      if(p.percent <= 0){
+        increase = true;
+      }
+
+      //p.percent =  increase?  p.percent + 5 : p.percent - 5;
+      
+      
+    }
+
+    handleDownloadProgress(progressObj);
+
+
+  }, 3000)
+
+}
+
+function handleDownloadProgress(progressObj){
+
+
+  $("#install_ea_download_progress_ex4_label").hide();
+  $("#install_ea_download_progress_ex4").hide();
+
+  $("#install_ea_download_progress_ex5_label").hide();
+  $("#install_ea_download_progress_ex5").hide();
+
+  $("#install_ea_download_progress_exe_label").hide();
+  $("#install_ea_download_progress_exe").hide();
+
+  $("#install_ea_download_progress_segment").show(100);
+  var done = true;
+  for(n in progressObj){    
+      var p = progressObj[n];
+
+      if(p.percent < 100){
+        done = false;
+      }
+
+      var label = p.percent < 100 
+                      ? `<pre style="margin: 0; font-size: 16px  !important; font-family: 'Times New Roman';"><span style="font-size: 12px;">Dowloading...</span>  ${p.name}</pre>` 
+                      : `<pre style="margin: 0; font-size: 16px  !important; font-family: 'Times New Roman';"><span style="font-size: 12px;">Dowloaded</span>  ${p.name}</pre>`;
+      
+      if(p.name.substring(p.name.length -4, p.name.length) === '.ex4'){
+        $("#install_ea_download_progress_ex4_label").html(label);
+        $("#install_ea_download_progress_ex4_label").show();
+        $("#install_ea_download_progress_ex4").show();
+
+        displayProgress("install_ea_download_progress_ex4", p);
+      }else if(p.name.substring(p.name.length -4, p.name.length) === '.ex5'){    
+        $("#install_ea_download_progress_ex5_label").html(label);
+        $("#install_ea_download_progress_ex5_label").show();
+        $("#install_ea_download_progress_ex5").show();
+        displayProgress("install_ea_download_progress_ex5", p);
+      }else if(p.name.substring(p.name.length -4, p.name.length) === '.exe'){
+        $("#install_ea_download_progress_exe_label").html(label);
+        $("#install_ea_download_progress_exe_label").show();
+        $("#install_ea_download_progress_exe").show();
+        displayProgress("install_ea_download_progress_exe", p);
+      }
+
+  }
+
+  if(done === true && progressObj){
+      HideProgresBarTimerId = setInterval(()=>{
+        $("#install_ea_download_progress_segment").hide(50);
+      }, 10000);
+  }
+
+}
+
+function displayProgress(id, obj){
+  $('#'+id).progress({    
+    percent: obj.percent,
+  });
+  
+}
 
 function ComputeLotSize() {
     var pair = currentPair();
@@ -1884,6 +2160,35 @@ function displayMetrics() {
   var html = orderMetricsHTML();
   if (html) {
     document.getElementById("center_content_metrics").innerHTML = html;
+  }
+}
+
+function displayInstallEA() {
+
+  var accounts = getAllAccounts();
+
+  var tbody = '';
+
+  for(var i=0; i< accounts.length; i++){
+    var account = accounts[i];
+
+    tbody +=`<tr>
+                 <td>${account.broker}</td>
+                 <td>${account.account_number}</td>
+                 <td>${getEAUpToDateStatus(account)}</td>
+              </tr>`    
+  }
+  
+  document.getElementById('ea_install_tbody').innerHTML = tbody;
+}
+
+function getEAUpToDateStatus(account){
+  if(account.ea_up_to_date === true){
+    return '<i class="green checkmark icon"></i>'
+  }else if(account.ea_up_to_date === false){
+    return '<i class="red close icon"></i>'
+  }else{//unknown
+    return '...'
   }
 }
 
@@ -2985,7 +3290,7 @@ function populatePairedAccountTable() {
         .getElementById("pairing_accounts_paired_tbody")
         .insertAdjacentHTML(
           "beforeend",
-          tablePairdAccountRowHTML(accountA, accountB)
+          tablePairedAccountRowHTML(accountA, accountB)
         );
     }
   }
@@ -3052,7 +3357,7 @@ function dropdownAccountItemHTML(account) {
                 </div>`;
 }
 
-function tablePairdAccountRowHTML(accountA, accountB) {
+function tablePairedAccountRowHTML(accountA, accountB) {
   if (!accountA || !accountB) {
     return "";
   }
@@ -3217,7 +3522,7 @@ function displayLog() {
         icon = "check circle green icon";
         break;
       case "error":
-        icon = "close icon icon red";
+        icon = "close icon red";
         break;
     }
 

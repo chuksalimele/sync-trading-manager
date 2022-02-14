@@ -5,8 +5,11 @@
 import { App } from './app';
 import { Config } from './Config';
 import { Constants } from './Constants';
+import { InstallController } from './InstallController';
 import { PlaceOrderTrigger } from './PlaceOrderTrigger';
+import { SyncService } from './SyncService';
 import { SyncUtil } from './SyncUtil';
+import { TraderAccount } from './TraderAccount';
 const { app, ipcMain, BrowserWindow } = require('electron')
 
 
@@ -14,9 +17,121 @@ var win;
 
 var mainApp = new App();
 
+export const Shutdown = (accounts: Array<TraderAccount>)=>{
+    mainApp.Close(accounts);
+};
+
 export var ipcSend = function (event, data) {
-    win.webContents.send(event, data);
+    win?.webContents?.send(event, data);
 }
+
+interface IAlertBox{
+    id?:string
+    title: string
+    message: string   
+    close?: Function 
+}
+
+interface INotifyBox{
+    id?:string
+    message: string   
+    type: string
+    duration: number
+    close?: Function 
+}
+
+interface IComfirmBox extends IAlertBox{
+    yes: Function
+    no: Function
+}
+
+interface IPromptBox extends IAlertBox{
+    input: Function
+    cancel: Function
+}
+
+
+
+class GuiMsgBox{
+
+    private promptMessageMap: Map<string, IPromptBox> = new Map();
+    private confirmMessageMap: Map<string, IComfirmBox> = new Map();
+    private alertMessageMap: Map<string, IAlertBox> = new Map();
+    private notifyMessageMap: Map<string, INotifyBox> = new Map();
+
+    public  prompt(prop: IPromptBox){
+        var id = SyncUtil.Unique();
+        this.promptMessageMap.set(id, {id: id, ...prop});        
+        ipcSend('gui-prompt-box', this.makeJsonable(this.promptMessageMap.get(id)));
+    }
+    
+    public  confirm(prop: IComfirmBox){
+        var id = SyncUtil.Unique();
+        this.confirmMessageMap.set(id, {id: id, ...prop});
+        ipcSend('gui-confirm-box', this.makeJsonable(this.confirmMessageMap.get(id)));
+    }
+
+    public  alert(prop: IAlertBox){
+        var id = SyncUtil.Unique();
+        this.alertMessageMap.set(id, {id: id, ...prop});
+        ipcSend('gui-alert-box', this.makeJsonable(this.alertMessageMap.get(id)));
+    }
+
+    public  notify(prop: INotifyBox){
+        var id = SyncUtil.Unique();
+        this.notifyMessageMap.set(id, {id: id, ...prop});
+        ipcSend('gui-notify-box', this.makeJsonable(this.notifyMessageMap.get(id)));
+    }
+
+    public feedback(id: string, result: any){
+        if(result.type === 'prompt'){
+            switch(result.action){
+                case 'input' : {
+                    this.promptMessageMap.get(id)?.input(result.value);
+                }break;
+                case 'cancel' : {
+                    this.promptMessageMap.get(id)?.cancel();
+                }break;
+            }
+            this.promptMessageMap.delete(id);
+        }else if(result.type === 'confirm'){
+            switch(result.action){
+                case 'yes' : {
+                    this.confirmMessageMap.get(id)?.yes(result.value);
+                }break;
+                case 'no' : {
+                    this.confirmMessageMap.get(id)?.no();
+                }break;
+            }
+            this.confirmMessageMap.delete(id);
+        }else if(result.type === 'alert'){
+            this.alertMessageMap.get(id)?.close?.();                            
+            this.alertMessageMap.delete(id);
+        }else if(result.type === 'notify'){
+            this.notifyMessageMap.get(id)?.close?.();                            
+            this.notifyMessageMap.delete(id);
+        }
+    }
+   
+    private makeJsonable(obj: any){
+        var jsobj = {...obj}
+        for(var n in jsobj){
+            if(typeof jsobj[n] === 'function'){
+             jsobj[n] = undefined;
+            }
+        }
+
+        return jsobj;
+    }
+}
+
+var guiMsgBox = new GuiMsgBox();
+
+export default guiMsgBox;
+
+export function GetSyncService(): SyncService{
+    return mainApp.GetSyncService();
+};
 
 Main();
 
@@ -48,7 +163,7 @@ function Main() {
         win.removeMenu();//remove the default menu
 
         // Open the DevTools. 
-        //win.webContents.openDevTools()//UNCOMMENT IN PRODUCTION TO HIDE DEBUGGER VIEW
+        win.webContents.openDevTools()//UNCOMMENT IN PRODUCTION TO HIDE DEBUGGER VIEW
 
         //Quit app when main BrowserWindow Instance is closed
         win.on('closed', function () {
@@ -85,6 +200,30 @@ function Main() {
     ipcMain.on('refresh-sync', function (event, arg) {
         mainApp.GetSyncService().RevalidateSyncAll();
     });
+
+
+    ipcMain.on('gui-msg-box-feedback', function (event, obj) {
+        guiMsgBox.feedback(obj.id, obj);
+    });
+
+    ipcMain.on('ea-install-file', function(event, obj){
+
+        var immediate = !!(obj? obj.immediate: false); // ensure the value is strictly true of false
+        
+        InstallController.InstallWith(obj.file_name, immediate);          
+    })
+
+
+    ipcMain.on('ea-download-install', function(event, obj){
+
+        var immediate = !!(obj? obj.immediate: false); // ensure the value is strictly true of false
+        
+        InstallController.InstallEAUpdate(immediate);
+    })
+
+    ipcMain.on('download-reinstall-all', function(event, obj){
+        InstallController.ReInstallAll();
+    })
 
 
     ipcMain.on('pair-accounts', function (event, arg) {

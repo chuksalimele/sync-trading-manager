@@ -557,12 +557,16 @@ var TraderAccount = /** @class */ (function () {
         return parseFloat(stoput_pip_move.toFixed(2));
     };
     TraderAccount.prototype.sendEACommand = function (commmand, prop, callback) {
+        if (prop === void 0) { prop = {}; }
+        if (callback === void 0) { callback = null; }
         var command_id = SyncUtil_1.SyncUtil.Unique();
         var cmdObj = {
             name: commmand,
             callback: callback
         };
-        this.EACommandList.set(command_id, cmdObj);
+        if (callback !== null) {
+            this.EACommandList.set(command_id, cmdObj);
+        }
         this.SendData(SyncUtil_1.SyncUtil.CommandPacket(cmdObj.name, command_id, prop));
     };
     /**

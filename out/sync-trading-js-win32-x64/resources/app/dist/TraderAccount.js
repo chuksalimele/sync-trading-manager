@@ -30,6 +30,7 @@ var TraderAccount = /** @class */ (function () {
         this.account_trade_cost = 0;
         this.chart_market_price = 0; //this is the current market price on the chart where the EA is loaded
         this.hedge_profit = 0;
+        this.ea_up_to_date = null; //unknown
         this.orders = new Map();
         this.CopyRetryAttempt = new Map();
         this.CloseRetryAttempt = new Map();
@@ -53,6 +54,9 @@ var TraderAccount = /** @class */ (function () {
         socket.on('close', this.OnSocketClose.bind(this));
         socket.on('error', this.OnSocketError.bind(this));
     }
+    TraderAccount.prototype.Close = function () {
+        this.socket.destroy();
+    };
     /**
      *Create a uncircular object of itself so that we don't get circular reference error
      * when serializing e.g in ipc transmission
@@ -88,7 +92,9 @@ var TraderAccount = /** @class */ (function () {
             platform_type: this.platform_type,
             icon_file: this.icon_file,
             is_market_closed: this.is_market_closed,
+            ea_executable_file: this.ea_executable_file,
             is_live_account: this.is_live_account,
+            ea_up_to_date: this.ea_up_to_date,
             trade_copy_type: this.trade_copy_type,
             orders: this.Orders(),
             column_index: this.peer != null ? this.PairColumnIndex() : -1,
@@ -124,7 +130,9 @@ var TraderAccount = /** @class */ (function () {
                 platform_type: this.peer.platform_type,
                 icon_file: this.peer.icon_file,
                 is_market_closed: this.peer.is_market_closed,
+                ea_executable_file: this.peer.ea_executable_file,
                 is_live_account: this.peer.is_live_account,
+                ea_up_to_date: this.peer.ea_up_to_date,
                 trade_copy_type: this.peer.trade_copy_type,
                 orders: this.peer.Orders(),
                 column_index: this.peer.PairColumnIndex(),
@@ -202,9 +210,19 @@ var TraderAccount = /** @class */ (function () {
     ;
     TraderAccount.prototype.IconFile = function () { return this.icon_file; };
     ;
+    TraderAccount.prototype.EAExecutableFile = function () { return this.ea_executable_file; };
+    ;
+    TraderAccount.prototype.IsMT4 = function () {
+        return this.ea_executable_file.endsWith('.ex4');
+    };
+    TraderAccount.prototype.IsMT5 = function () {
+        return this.ea_executable_file.endsWith('.ex5');
+    };
     TraderAccount.prototype.IsMarketClosed = function () { return this.is_market_closed; };
     ;
     TraderAccount.prototype.IsLiveAccount = function () { return this.is_live_account; };
+    ;
+    TraderAccount.prototype.IsEAUpToDate = function () { return this.ea_up_to_date; };
     ;
     TraderAccount.prototype.GetLastError = function () { return this.last_error; };
     ;
@@ -427,11 +445,17 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.SetPlatformType = function (platform_type) {
         this.platform_type = platform_type;
     };
+    TraderAccount.prototype.SetEAExecutableFile = function (ea_executable_file) {
+        this.ea_executable_file = ea_executable_file;
+    };
     TraderAccount.prototype.SetMarketClosed = function (is_market_closed) {
         this.is_market_closed = is_market_closed;
     };
     TraderAccount.prototype.SetIsLiveAccount = function (is_live_account) {
         this.is_live_account = is_live_account;
+    };
+    TraderAccount.prototype.SetEAUpToDate = function (ea_up_to_date) {
+        this.ea_up_to_date = ea_up_to_date;
     };
     TraderAccount.prototype.SetTradeCopyType = function (trade_copy_type) {
         this.trade_copy_type = trade_copy_type;
@@ -718,7 +742,7 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.DoSendCopy = function (order) {
         //mark as copying to avoid duplicate copies
         order.SyncCopying(true);
-        this.peer.SendData(SyncUtil_1.SyncUtil.SyncCopyPacket(order, this.peer.trade_copy_type, this.broker, this.account_number));
+        this.peer.SendData(SyncUtil_1.SyncUtil.SyncCopyPacket(order, this.peer.trade_copy_type, this.peer.broker, this.peer.account_number, this.broker, this.account_number));
         main_1.ipcSend('sending-sync-copy', {
             account: this.Safecopy(),
             order: order
