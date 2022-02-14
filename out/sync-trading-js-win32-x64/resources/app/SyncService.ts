@@ -475,7 +475,7 @@ export class SyncService {
           accounts.push(unpaired);
         }else if(mt === 'MT5' && unpaired.IsMT5()){
           accounts.push(unpaired);
-        }else{
+        }else if (mt == null){
           accounts.push(unpaired);
         }
 
@@ -493,7 +493,7 @@ export class SyncService {
           accounts.push(pair0);
         }else if(mt === 'MT5' && pair0.IsMT5()){
           accounts.push(pair0);
-        }else{
+        }else if (mt == null){
           accounts.push(pair0);
         }        
       }
@@ -503,7 +503,7 @@ export class SyncService {
           accounts.push(pair1);
         }else if(mt === 'MT5' && pair1.IsMT5()){
           accounts.push(pair1);
-        }else{
+        }else if (mt == null){
           accounts.push(pair1);
         }
       }

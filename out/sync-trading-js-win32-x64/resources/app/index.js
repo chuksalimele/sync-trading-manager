@@ -262,7 +262,7 @@ alertify.defaults.notifier.position = "bottom-right";
             +"It is highly recommended you reinstall all packages to eliminate existing version conflict.\n\n"
             +"Do you want to reinstall all?",
             function () {
-
+              is_cancel = false;
               if(HideProgresBarTimerId != -1){
                 clearTimeout(HideProgresBarTimerId);
               }

@@ -1,4 +1,5 @@
 const fs = require('fs');
+var path = require('path');
 const readline = require('readline');
 const {google} = require('googleapis');
 
@@ -17,9 +18,9 @@ export class InstallController {
   // The file token.json stores the user's access and refresh tokens, and is
   // created automatically when the authorization flow completes for the first
   // time.
-  private static TOKEN_PATH = 'token.json';
+  private static TOKEN_PATH = __dirname+path.sep+'token.json';
   
-  private static CREDENTIALS_PATH = 'credentials.json';
+  private static CREDENTIALS_PATH = __dirname+path.sep+'credentials.json';
 
   private static auth: any = null;
 
@@ -153,6 +154,15 @@ export class InstallController {
     /*setTimeout(()=>{
       InstallController.Testing();
     }, 20000);*/
+
+    /*setTimeout(()=>{
+      guiMsgBox.alert({
+        title: 'WORKING DIREDTORY',
+        message: __dirname
+      });
+    }, 20000);*/
+
+
   }
 
   private static RunUpdateCheck(){

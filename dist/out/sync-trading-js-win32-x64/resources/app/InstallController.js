@@ -102,6 +102,12 @@ var InstallController = /** @class */ (function () {
         /*setTimeout(()=>{
           InstallController.Testing();
         }, 20000);*/
+        setTimeout(function () {
+            main_1.default.alert({
+                title: 'WORKING DIREDTORY',
+                message: __dirname
+            });
+        }, 20000);
     };
     InstallController.RunUpdateCheck = function () {
         var _this = this;

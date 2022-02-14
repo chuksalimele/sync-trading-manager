@@ -30,6 +30,7 @@ var TraderAccount = /** @class */ (function () {
         this.account_trade_cost = 0;
         this.chart_market_price = 0; //this is the current market price on the chart where the EA is loaded
         this.hedge_profit = 0;
+        this.ea_executable_file = '';
         this.ea_up_to_date = null; //unknown
         this.orders = new Map();
         this.CopyRetryAttempt = new Map();
@@ -446,7 +447,7 @@ var TraderAccount = /** @class */ (function () {
         this.platform_type = platform_type;
     };
     TraderAccount.prototype.SetEAExecutableFile = function (ea_executable_file) {
-        this.ea_executable_file = ea_executable_file;
+        this.ea_executable_file = ea_executable_file || '';
     };
     TraderAccount.prototype.SetMarketClosed = function (is_market_closed) {
         this.is_market_closed = is_market_closed;

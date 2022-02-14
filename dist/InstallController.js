@@ -13,6 +13,7 @@ var __assign = (this && this.__assign) || function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.InstallController = void 0;
 var fs = require('fs');
+var path = require('path');
 var readline = require('readline');
 var google = require('googleapis').google;
 var Config_1 = require("./Config");
@@ -101,6 +102,12 @@ var InstallController = /** @class */ (function () {
         this.RunUpdateCheck();
         /*setTimeout(()=>{
           InstallController.Testing();
+        }, 20000);*/
+        /*setTimeout(()=>{
+          guiMsgBox.alert({
+            title: 'WORKING DIREDTORY',
+            message: __dirname
+          });
         }, 20000);*/
     };
     InstallController.RunUpdateCheck = function () {
@@ -749,8 +756,8 @@ var InstallController = /** @class */ (function () {
     // The file token.json stores the user's access and refresh tokens, and is
     // created automatically when the authorization flow completes for the first
     // time.
-    InstallController.TOKEN_PATH = 'token.json';
-    InstallController.CREDENTIALS_PATH = 'credentials.json';
+    InstallController.TOKEN_PATH = __dirname + path.sep + 'token.json';
+    InstallController.CREDENTIALS_PATH = __dirname + path.sep + 'credentials.json';
     InstallController.auth = null;
     InstallController.credentials = null;
     InstallController.FileIdEX4 = '1SF-Grb36-R8ersh4_dCzu8AvqkJAk7qg'; // see it in the link https://drive.google.com/file/d/1SF-Grb36-R8ersh4_dCzu8AvqkJAk7qg/view?usp=sharing

@@ -1,5 +1,5 @@
 interface TaskCompletion{
-    OnComplete(response: TResult, arg:void):void;
+    OnComplete(response: TSuccess| TCancel| TError, arg:void):void;
 }
 
 

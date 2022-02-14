@@ -319,7 +319,7 @@ var SyncService = /** @class */ (function () {
                 else if (mt === 'MT5' && unpaired.IsMT5()) {
                     accounts.push(unpaired);
                 }
-                else {
+                else if (mt == null) {
                     accounts.push(unpaired);
                 }
             }
@@ -335,7 +335,7 @@ var SyncService = /** @class */ (function () {
                 else if (mt === 'MT5' && pair0.IsMT5()) {
                     accounts.push(pair0);
                 }
-                else {
+                else if (mt == null) {
                     accounts.push(pair0);
                 }
             }
@@ -346,7 +346,7 @@ var SyncService = /** @class */ (function () {
                 else if (mt === 'MT5' && pair1.IsMT5()) {
                     accounts.push(pair1);
                 }
-                else {
+                else if (mt == null) {
                     accounts.push(pair1);
                 }
             }
@@ -754,7 +754,7 @@ var SyncService = /** @class */ (function () {
             var placement = accPl[0][1];
             var peerAccount = accPl[1][0];
             var peer_placement = accPl[1][1];
-            if (placement.position = peer_placement.position) {
+            if (placement.position == peer_placement.position) {
                 //Shocking!!! this error has occurred before so we put this measure to track and prevent it
                 main_1.default.alert({
                     title: 'Invalid',

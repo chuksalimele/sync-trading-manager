@@ -43,7 +43,7 @@ export class TraderAccount {
     private chart_market_price: number = 0;//this is the current market price on the chart where the EA is loaded
     private hedge_profit: number = 0;
     private trade_copy_type: string;
-    private ea_executable_file: string;
+    private ea_executable_file: string = '';
     private is_market_closed: boolean;
     private is_live_account: boolean|null;
     private ea_up_to_date: boolean|null = null;//unknown
@@ -547,7 +547,7 @@ export class TraderAccount {
     }
     
     public SetEAExecutableFile(ea_executable_file: string): void {
-        this.ea_executable_file = ea_executable_file
+        this.ea_executable_file = ea_executable_file || ''
     }
 
     public SetMarketClosed(is_market_closed: boolean): void {
