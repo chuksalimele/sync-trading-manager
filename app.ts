@@ -12,12 +12,16 @@ var net = require('net');
 export const ipcMain = require('electron').ipcMain
 export const fs = require("fs");
 export const path = require('path');
+export const os = require('os');
 export const mkdirp = require('mkdirp');
+export const readline = require('readline');
+export const {google} = require('googleapis');
 
 export class App {
 
     private service: SyncService = new SyncService();
-
+    private server: any = null;
+    private isStop: boolean = false;
     constructor() {
 
     }
@@ -34,17 +38,35 @@ export class App {
 
         this.service.Start();
 
-        var server = net.createServer(this.connectionListener.bind(this));
+        this.server = net.createServer(this.connectionListener.bind(this));
 
-        server.on('close', this.OnClose.bind(this));
+        this.server.on('close', this.OnClose.bind(this));
 
-        server.listen(Config.PIPE_PATH, function () {
-            //console.log('Stream server pipe listening on ' + Config.PIPE_PATH);
-        });
+        try {
+         
+            this.server.listen(Config.PIPE_PATH, function () {
+                //console.log('Stream server pipe listening on ' + Config.PIPE_PATH);
+            });
 
-        ipcSend('sync-running', {
-            version: Config.VERSION
-        });
+            ipcSend('sync-running', {
+                version: Config.VERSION
+            });   
+        } catch (error) {
+            console.log(error);
+        }
+    }
+
+    public Close(accounts: Array<TraderAccount>){
+        this.isStop = true;
+        
+        this.server.close();
+        try {             
+            for(var account of accounts){
+                account.Close();
+            }   
+        } catch (error) {
+            console.log(error);
+        }
     }
 
     OnClose() {
@@ -52,11 +74,13 @@ export class App {
 
         ipcSend('sync-close', true);
 
-        setTimeout(function () {
-            //console.log('Stream server pipe restarting...');
-            ipcSend('sync-restart', true);
-            
-        }, 1000);
+        if(!this.isStop){// only restart if we did not intentionally stop the server
+            setTimeout(function () {
+                //console.log('Stream server pipe restarting...');
+                ipcSend('sync-restart', true);
+                
+            }, 1000);
+        }
     }
 }
 

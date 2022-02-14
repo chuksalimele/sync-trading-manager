@@ -53,6 +53,11 @@
                 <a class="teal item" id="btn_metrics">
                     Metrics
                 </a>
+                
+                <a class="teal item" id="btn_install_ea">
+                    Install EA
+                </a>
+
                 <a class="teal item" id="btn_settings">
                     Settings
                 </a>
@@ -246,6 +251,55 @@
             <div id="center_content_metrics" style="width: auto; height: 100%; display: none;">
 
                 This is metrics
+
+            </div>
+
+            <!--INSTALL EA PANE-->
+            <div id="center_content_install_ea" style="width: auto; height: 100%; display: none;">
+                <div class="ui grid">
+                    <div class="two column row" style="display: flex; justify-content: center;">
+                        <div class="column" style="display: flex; justify-content: center;">
+                            <h3>Install Expert Advisor</h3>
+                        </div>
+    
+                    </div>
+                    <div class="two column row" style="display: flex; justify-content: center;">
+                        <div class="column" style="display: flex; justify-content: center;">
+                            <i id="install_ea_feedback" style="font-size: 18px;"><!--indicate feedback--></i>
+                        </div>
+    
+                    </div>
+    
+                    <div class="two column row">
+                        <div class="column">
+                            <input id="install_ea_file_input" type="file"  style="display: none;"  />
+                            <button class="ui primary button" id="install_ea_file_location_btn">
+                                Install From File Location
+                            </button>
+                        </div>
+                        <div class="column">
+                            <button class="ui primary button right floated " id="install_ea_download_and_install_update_btn">
+                                Download And Install Update
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="sixteen wide column">
+                            <table class="ui celled table" id="ea_install_table">
+                                <thead>
+                                    <tr>
+                                        <th colspan="2">Accounts</th>
+                                        <th>Up to date</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ea_install_tbody">
+                                    <!--four colums - first is broker, second account number and third is update status-->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
 
             </div>
 
@@ -647,6 +701,27 @@
         </div>
     </div>
 
+    </div>
+    <div class="ui segment" style="display: none; position: fixed; bottom: 20px; right: 20px;" id="install_ea_download_progress_segment">
+        <div class="label" style="text-align: left; margin-top: 10px; display: none;" id="install_ea_download_progress_ex4_label">EX4 file</div>                                    
+        <div class="ui small progress" style="margin: 0; display: none;" id="install_ea_download_progress_ex4">
+            <div class="bar">
+                <div class="progress"></div>
+            </div>
+        </div>
+
+        <div class="label" style="text-align: left; margin-top: 10px; display: none;"  id="install_ea_download_progress_ex5_label">EX5 file</div>
+        <div class="ui small progress" style="margin: 0; display: none;" id="install_ea_download_progress_ex5">
+          <div class="bar">
+            <div class="progress"></div>
+          </div>
+        </div>
+        <div class="label" style="text-align: left; margin-top: 10px; display: none;"  id="install_ea_download_progress_exe_label">EXE file</div>
+        <div class="ui small progress" style="margin: 0; display: none;" id="install_ea_download_progress_exe">
+          <div class="bar">
+            <div class="progress"></div>
+          </div>
+        </div>
     </div>
     <script>
 

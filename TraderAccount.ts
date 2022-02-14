@@ -43,8 +43,10 @@ export class TraderAccount {
     private chart_market_price: number = 0;//this is the current market price on the chart where the EA is loaded
     private hedge_profit: number = 0;
     private trade_copy_type: string;
+    private ea_executable_file: string;
     private is_market_closed: boolean;
     private is_live_account: boolean|null;
+    private ea_up_to_date: boolean|null = null;//unknown
     private orders: Map<number, Order> = new Map<number, Order>();
     private CopyRetryAttempt: Map<number, number> = new Map<number, number>();
     private CloseRetryAttempt: Map<number, number> = new Map<number, number>();
@@ -70,6 +72,10 @@ export class TraderAccount {
         socket.on('end', this.OnSocketEnd.bind(this));
         socket.on('close', this.OnSocketClose.bind(this));
         socket.on('error', this.OnSocketError.bind(this));
+    }
+
+    public Close(){
+        this.socket.destroy();
     }
 
     /**
@@ -108,7 +114,9 @@ export class TraderAccount {
             platform_type: this.platform_type,
             icon_file: this.icon_file,
             is_market_closed: this.is_market_closed,
+            ea_executable_file:this.ea_executable_file,
             is_live_account: this.is_live_account,
+            ea_up_to_date: this.ea_up_to_date,            
             trade_copy_type: this.trade_copy_type,
             orders: this.Orders(),//array of orders - important!
             column_index: this.peer !=null ? this.PairColumnIndex() : -1,
@@ -145,7 +153,9 @@ export class TraderAccount {
                 platform_type: this.peer.platform_type,
                 icon_file: this.peer.icon_file,
                 is_market_closed: this.peer.is_market_closed,
+                ea_executable_file:this.peer.ea_executable_file,
                 is_live_account: this.peer.is_live_account,
+                ea_up_to_date: this.peer.ea_up_to_date,            
                 trade_copy_type: this.peer.trade_copy_type,
                 orders: this.peer.Orders(),//array of orders - important!
                 column_index: this.peer.PairColumnIndex(),
@@ -224,9 +234,21 @@ export class TraderAccount {
 
     public IconFile(): string { return this.icon_file };
 
+    public EAExecutableFile():string{return this.ea_executable_file};
+
+    public IsMT4():boolean{
+        return this.ea_executable_file.endsWith('.ex4');
+    }
+
+    public IsMT5():boolean{
+        return this.ea_executable_file.endsWith('.ex5');
+    }
+
     public IsMarketClosed(): boolean { return this.is_market_closed };
 
     public IsLiveAccount(): boolean { return this.is_live_account };
+
+    public IsEAUpToDate(): boolean|null { return this.ea_up_to_date };
 
     public GetLastError(): string { return this.last_error };
 
@@ -523,6 +545,10 @@ export class TraderAccount {
     public SetPlatformType(platform_type: string): void {
         this.platform_type = platform_type
     }
+    
+    public SetEAExecutableFile(ea_executable_file: string): void {
+        this.ea_executable_file = ea_executable_file
+    }
 
     public SetMarketClosed(is_market_closed: boolean): void {
         this.is_market_closed = is_market_closed
@@ -531,7 +557,10 @@ export class TraderAccount {
     public SetIsLiveAccount(is_live_account: boolean): void {
         this.is_live_account = is_live_account
     }
-
+    
+    public SetEAUpToDate(ea_up_to_date: boolean|null): void {
+        this.ea_up_to_date = ea_up_to_date
+    }
 
     public SetTradeCopyType(trade_copy_type: string): void {
         this.trade_copy_type = trade_copy_type
@@ -880,7 +909,14 @@ export class TraderAccount {
 
         //mark as copying to avoid duplicate copies
         order.SyncCopying(true);
-        this.peer.SendData(SyncUtil.SyncCopyPacket(order, this.peer.trade_copy_type, this.broker, this.account_number));
+        this.peer.SendData(
+            SyncUtil.SyncCopyPacket(order, 
+                    this.peer.trade_copy_type,
+                    this.peer.broker, 
+                    this.peer.account_number, 
+                    this.broker, 
+                    this.account_number)
+                 );
 
         ipcSend('sending-sync-copy', {
             account: this.Safecopy(),

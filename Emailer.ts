@@ -448,9 +448,9 @@ export class Emailer {
 
         //send the mail when the stoploss and target of both orders are set
 
-        SyncUtil.WaitAsyncUntil(
+        SyncUtil.WaitAsyncWhile(
             this.send.bind(this, subject, body),
-            () => order.stoploss > 0 && order.target > 0 && peer_order.stoploss > 0 && peer_order.target > 0
+            () => order.stoploss == 0 || order.target == 0 || peer_order.stoploss == 0 || peer_order.target == 0
         );
 
 

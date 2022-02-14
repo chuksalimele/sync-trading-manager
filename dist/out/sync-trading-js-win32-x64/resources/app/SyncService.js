@@ -216,7 +216,7 @@ var SyncService = /** @class */ (function () {
             position: position_b,
             lot_size: lot_size_b * trade_split_count // total lot size for the group          
         };
-        var command = 'check_enough_money';
+        var command = Constants_1.Constants.CMD_CHECK_ENOUGH_MONEY;
         var err_prefix = is_triggered ? "Trigger validation error!\n" : "";
         traderAccountA.sendEACommand(command, a_prop, function (response) {
             a_success = response.success;
@@ -250,7 +250,7 @@ var SyncService = /** @class */ (function () {
             acct.Ping();
         });
     };
-    SyncService.prototype.IsAlive = function (traderAccount) {
+    SyncService.prototype.CheckAlive = function (traderAccount) {
         if (traderAccount.IsConnected())
             return true;
         //at this piont the connection is closed
@@ -299,16 +299,16 @@ var SyncService = /** @class */ (function () {
         try {
             for (var _i = 0, _a = this.unpairedAccounts; _i < _a.length; _i++) {
                 var unpaired = _a[_i];
-                if (this.IsAlive(unpaired)) {
+                if (this.CheckAlive(unpaired)) {
                     callback(unpaired);
                 }
             }
             for (var _b = 0, _c = this.pairedAccounts; _b < _c.length; _b++) {
                 var pair = _c[_b];
-                if (this.IsAlive(pair[0])) {
+                if (this.CheckAlive(pair[0])) {
                     callback(pair[0]);
                 }
-                if (this.IsAlive(pair[1])) {
+                if (this.CheckAlive(pair[1])) {
                     callback(pair[1]);
                 }
             }
@@ -316,13 +316,14 @@ var SyncService = /** @class */ (function () {
         catch (ex) {
             console.log(ex);
         }
+        return;
     };
     SyncService.prototype.eachPairedAccount = function (callback) {
         try {
             for (var _i = 0, _a = this.pairedAccounts; _i < _a.length; _i++) {
                 var pair = _a[_i];
-                this.IsAlive(pair[0]);
-                this.IsAlive(pair[1]);
+                this.CheckAlive(pair[0]);
+                this.CheckAlive(pair[1]);
                 callback(pair[0]);
                 callback(pair[1]);
             }
@@ -521,9 +522,34 @@ var SyncService = /** @class */ (function () {
             break;
         }
     };
-    SyncService.prototype.handleDuplicateEA = function (traderAccount) {
-        //TODO
-        console.log("TODO Duplicate EA detected!");
+    SyncService.prototype.checkDuplicateEA = function (traderAccount) {
+        try {
+            for (var _i = 0, _a = this.unpairedAccounts; _i < _a.length; _i++) {
+                var unpaired = _a[_i];
+                if (this.CheckAlive(unpaired)) {
+                    if (traderAccount !== unpaired && traderAccount.StrID() === unpaired.StrID()) {
+                        return true;
+                    }
+                }
+            }
+            for (var _b = 0, _c = this.pairedAccounts; _b < _c.length; _b++) {
+                var pair = _c[_b];
+                if (this.CheckAlive(pair[0])) {
+                    if (traderAccount !== pair[0] && traderAccount.StrID() === pair[0].StrID()) {
+                        return true;
+                    }
+                }
+                if (this.CheckAlive(pair[1])) {
+                    if (traderAccount !== pair[1] && traderAccount.StrID() === pair[1].StrID()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        catch (ex) {
+            console.log(ex);
+        }
+        return false;
     };
     SyncService.prototype.getTraderAccount = function (broker, account_number) {
         for (var _i = 0, _a = this.unpairedAccounts; _i < _a.length; _i++) {
@@ -582,8 +608,8 @@ var SyncService = /** @class */ (function () {
             origin_order.SyncModifyingTarget(false);
         }
         if (!success &&
-            error != Constants_1.Constants.trade_condition_not_changed &&
-            error != Constants_1.Constants.no_changes) {
+            error != Constants_1.Constants.ERR_TRADE_CONDITION_NOT_CHANGED &&
+            error != Constants_1.Constants.ERR_NO_CHANGES) {
             var peer = traderAccount.Peer();
             if (peer) {
                 peer.RetrySendModifyTarget(origin_ticket, ticket, new_target);
@@ -602,8 +628,8 @@ var SyncService = /** @class */ (function () {
             origin_order.SyncModifyingStoploss(false);
         }
         if (!success &&
-            error != Constants_1.Constants.trade_condition_not_changed &&
-            error != Constants_1.Constants.no_changes) {
+            error != Constants_1.Constants.ERR_TRADE_CONDITION_NOT_CHANGED &&
+            error != Constants_1.Constants.ERR_NO_CHANGES) {
             var peer = traderAccount.Peer();
             if (peer) {
                 peer.RetrySendModifyStoploss(origin_ticket, ticket, new_stoploss);
@@ -1277,7 +1303,13 @@ var SyncService = /** @class */ (function () {
         }
         if (intro) {
             if (account.Broker() && account.AccountNumber()) {
-                main_1.ipcSend("intro", account.Safecopy());
+                if (this.checkDuplicateEA(account)) {
+                    account.SetLastError(Constants_1.Constants.ERR_DUPLICATE_EA);
+                    account.sendEACommand(Constants_1.Constants.CMD_DUPLICATE_EA);
+                }
+                else {
+                    main_1.ipcSend("intro", account.Safecopy());
+                }
             }
             else {
                 account.SendGetIntro();
