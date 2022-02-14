@@ -157,7 +157,7 @@ alertify.defaults.notifier.position = "bottom-right";
 
     $("#install_ea_file_location_btn").on("click", function(){
       $("#install_ea_file_input").click();
-    })
+    });
 
     $("#install_ea_file_input").on("input", function(){      
 
@@ -210,20 +210,6 @@ alertify.defaults.notifier.position = "bottom-right";
 
       })
 
-    })
-
-    $("#show_compute_lot_size_dialog").on("click", function () {      
-      
-      var account_for_buy_value = $("#place_order_dialog_accounts").dropdown(
-        "get value"
-      );
-
-      if (!account_for_buy_value) {
-        alertBox("Invalid", "Please select account for buy side!");
-        return;
-      }
-
-      ComputeLotSize();
     });
 
 
@@ -1471,6 +1457,22 @@ function PlaceOrder() {
         return false;
       },
       onShow: function () {
+
+        document.getElementById('show_compute_lot_size_dialog').onclick = ()=>{
+
+          var account_for_buy_value = $("#place_order_dialog_accounts").dropdown(
+            "get value"
+          );
+    
+          if (!account_for_buy_value) {
+            alertBox("Invalid", "Please select account for buy side!");
+            return;
+          }
+    
+          ComputeLotSize();
+        }
+
+
         $("#place_order_dialog_accounts").dropdown();
 
         document.getElementById(

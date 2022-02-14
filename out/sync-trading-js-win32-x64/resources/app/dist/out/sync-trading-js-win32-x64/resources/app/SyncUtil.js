@@ -7,13 +7,135 @@ var Constants_1 = require("./Constants");
 var SyncUtil = /** @class */ (function () {
     function SyncUtil() {
     }
-    SyncUtil.WaitAsyncUntil = function (fun, condition) {
-        if (!condition()) {
-            setImmediate(this.WaitAsyncUntil.bind(this), fun, condition);
+    /**
+     * asynchronously delay a call to a function while a condition is true
+     * and ignores the call to the function if another condition is true
+     * @param fun
+     * @param wait_condition - keep waiting while this condition is true
+     * @param stop_condition (optional)- just cancel and ignore the call to the function if this condition is true
+     */
+    SyncUtil.WaitAsyncWhile = function (fun, wait_condition, stop_condition) {
+        if (stop_condition === void 0) { stop_condition = null; }
+        if (stop_condition != null && stop_condition()) {
+            return;
+        }
+        if (wait_condition()) {
+            setImmediate(this.WaitAsyncWhile.bind(this), fun, wait_condition, stop_condition);
         }
         else {
             fun();
         }
+    };
+    SyncUtil.GetEAPathsMQL4 = function (lead_path, callback) {
+        return this.GetEAPaths0(lead_path, this.MQL4, callback);
+    };
+    SyncUtil.GetEAPathsMQL5 = function (lead_path, callback) {
+        return this.GetEAPaths0(lead_path, this.MQL5, callback);
+    };
+    SyncUtil.GetEAPaths = function (lead_path, callback) {
+        return this.GetEAPaths0(lead_path, null, callback);
+    };
+    SyncUtil.GetEAPaths0 = function (lead_path, mql, callback) {
+        var required_files = [];
+        var sep_index = lead_path.length;
+        var pre_sep_index = lead_path.length;
+        var sep_count_back = 0;
+        var word = '';
+        var terminal_dir = ''; //location of all the MT platforms
+        for (var i = lead_path.length - 1; i > -1; i--) {
+            var char = lead_path.charAt(i);
+            if (char == app_1.path.sep ||
+                ((app_1.os.platform() == 'win32' || app_1.os.platform() == 'win64')
+                    && (char == '\\' || char == '/'))) {
+                pre_sep_index = sep_index;
+                sep_index = i;
+                sep_count_back++;
+                word = lead_path.substring(sep_index + 1, pre_sep_index).trim();
+                if (word == 'Terminal') {
+                    terminal_dir = lead_path.substring(0, pre_sep_index).trim();
+                    break;
+                }
+            }
+        }
+        var that = this;
+        app_1.fs.readdir(terminal_dir, function (err, files) {
+            if (err) {
+                return callback(err);
+            }
+            var try_dirs = [];
+            files.forEach(function (file_name) {
+                var req_dir_ex4 = terminal_dir + app_1.path.sep +
+                    file_name + app_1.path.sep +
+                    'MQL4' + app_1.path.sep +
+                    'Experts';
+                var req_dir_ex5 = terminal_dir + app_1.path.sep +
+                    file_name + app_1.path.sep +
+                    'MQL5' + app_1.path.sep +
+                    'Experts';
+                try_dirs.push(req_dir_ex4);
+                try_dirs.push(req_dir_ex5);
+            });
+            try_dirs.forEach(function (try_dir_name, index) {
+                var resultFn = function (exists) {
+                    if (exists) {
+                        var req_file = this;
+                        var req_mql = SyncUtil.PathMQL(req_file);
+                        req_file = req_mql === SyncUtil.MQL4
+                            ? req_file + app_1.path.sep + Config_1.Config.MT4_EA_EXEC_FILE_SIMPLE_NAME
+                            : req_file + app_1.path.sep + Config_1.Config.MT5_EA_EXEC_FILE_SIMPLE_NAME;
+                        if (!mql || mql === req_mql) {
+                            required_files.push(req_file);
+                        }
+                    }
+                    if (index == try_dirs.length - 1) {
+                        callback(null, required_files);
+                    }
+                };
+                var resultFnBind = resultFn.bind(try_dir_name);
+                that.checkFileExists(try_dir_name)
+                    .then(resultFnBind);
+            });
+        });
+        return; //todo
+    };
+    SyncUtil.PathMQL = function (lead_path) {
+        var sep_index = -1;
+        var pre_sep_index = -1;
+        var sep_count_back = 0;
+        var word = '';
+        for (var i = lead_path.length - 1; i > -1; i--) {
+            var char = lead_path.charAt(i);
+            if (char == app_1.path.sep ||
+                ((app_1.os.platform() == 'win32' || app_1.os.platform() == 'win64')
+                    && (char == '\\' || char == '/'))) {
+                pre_sep_index = sep_index;
+                sep_index = i;
+                sep_count_back++;
+                if (pre_sep_index > -1) {
+                    word = lead_path.substring(sep_index + 1, pre_sep_index).trim();
+                    if (word == 'MQL4') {
+                        return SyncUtil.MQL4;
+                    }
+                    if (word == 'MQL5') {
+                        return SyncUtil.MQL5;
+                    }
+                }
+            }
+        }
+        return null;
+    };
+    SyncUtil.IsPathMQL4 = function (lead_path) {
+        return this.PathMQL(lead_path) === this.MQL4;
+    };
+    SyncUtil.IsPathMQL5 = function (lead_path) {
+        return this.PathMQL(lead_path) === this.MQL5;
+    };
+    SyncUtil.checkFileExists = function (filepath) {
+        return new Promise(function (resolve, reject) {
+            app_1.fs.access(filepath, app_1.fs.constants.F_OK, function (error) {
+                resolve(!error);
+            });
+        });
     };
     SyncUtil.Unique = function () {
         return "" + (++this.CountSeq) + this.InitUnique;
@@ -131,19 +253,22 @@ var SyncUtil = /** @class */ (function () {
             + "lot_size=" + placement.lot_size + Constants_1.Constants.TAB
             + "action=" + action;
     };
-    SyncUtil.SyncCopyPacket = function (order, trade_copy_type, broker, account_number) {
+    SyncUtil.SyncCopyPacket = function (order, trade_copy_type, broker, account_number, peer_broker, peer_account_number) {
         if (order.ticket == -1 &&
             order.position == undefined &&
             order.symbol == undefined) {
             console.log("Why is this? Please resolve.");
         }
+        //try for symbol and that of raw_symbol for whichever is configured
+        var relative_symbol = SyncUtil.GetRelativePeerSymbol(order.symbol, peer_broker, peer_account_number, broker, account_number)
+            || SyncUtil.GetRelativePeerSymbol(order.raw_symbol, peer_broker, peer_account_number, broker, account_number);
         return "ticket=" + order.ticket + Constants_1.Constants.TAB
             + "position=" + order.position + Constants_1.Constants.TAB
             + "target=" + order.stoploss + Constants_1.Constants.TAB //yes, target becomes the stoploss of the sender - according to the strategy
             + "stoploss=" + order.target + Constants_1.Constants.TAB //yes, stoploss becomes the target of the sender - according to the strategy
             + "symbol=" + order.symbol + Constants_1.Constants.TAB
             + "raw_symbol=" + order.raw_symbol + Constants_1.Constants.TAB
-            + "relative_symbol=" + SyncUtil.GetRelativeSymbol(order.symbol, broker, account_number) + Constants_1.Constants.TAB
+            + "relative_symbol=" + relative_symbol + Constants_1.Constants.TAB
             + "lot_size=" + order.lot_size + Constants_1.Constants.TAB +
             "trade_copy_type=" + trade_copy_type + Constants_1.Constants.TAB + "action=sync_copy";
     };
@@ -185,6 +310,25 @@ var SyncUtil = /** @class */ (function () {
                 if (typeof rel_symbols[broker] === 'object'
                     && typeof (obj = rel_symbols[broker][account_number]) === 'object') {
                     return obj['symbol']; // using new configuration
+                }
+            }
+        }
+        return '';
+    };
+    SyncUtil.GetRelativePeerSymbol = function (peer_symbol, peer_broker, peer_account_number, broker, account_number) {
+        var symb_config = this.AppConfigMap.get('symbol');
+        if (!symb_config) {
+            return '';
+        }
+        for (var n in symb_config) {
+            var sc = symb_config[n];
+            var obj;
+            if (typeof sc[peer_broker] === 'object'
+                && typeof (obj = sc[peer_broker][peer_account_number]) === 'object'
+                && obj['symbol'] === peer_symbol) {
+                if (typeof sc[broker] === 'object'
+                    && typeof (obj = sc[broker][account_number]) === 'object') {
+                    return obj['symbol'];
                 }
             }
         }
@@ -247,6 +391,8 @@ var SyncUtil = /** @class */ (function () {
     SyncUtil.InitUnique = (new Date()).getTime().toString(36) + Math.random().toString(36).slice(2);
     SyncUtil.CountSeq = 0;
     SyncUtil.AppConfigMap = new Map();
+    SyncUtil.MQL4 = 'MQL4';
+    SyncUtil.MQL5 = 'MQL5';
     return SyncUtil;
 }());
 exports.SyncUtil = SyncUtil;

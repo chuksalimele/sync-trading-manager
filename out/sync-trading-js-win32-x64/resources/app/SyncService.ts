@@ -1046,7 +1046,7 @@ export class SyncService {
       var peerAccount: TraderAccount = accPl[1][0];
       var peer_placement: OrderPlacement = accPl[1][1];
 
-      if(placement.position = peer_placement.position){
+      if(placement.position == peer_placement.position){
         //Shocking!!! this error has occurred before so we put this measure to track and prevent it
         guiMsgBox.alert({
           title:'Invalid',
