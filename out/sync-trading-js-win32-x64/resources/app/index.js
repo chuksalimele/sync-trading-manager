@@ -605,7 +605,55 @@ alertify.defaults.notifier.position = "bottom-right";
         refreshPairedTable();
       }
     });
+    
+    ipc.on("lock-in-profit-success", function (event, arg) {
+      console.log("lock-in-profit-success", arg);
 
+      addSuccessLog(
+        `[${arg.account.broker}, ${arg.account.account_number}] Lock In Profit: Trailing stop moved to ${arg.trailing_stop}`
+      );
+
+      if (setAccount(arg.account)) {
+        refreshPairedTable();
+      }
+    });
+
+    ipc.on("lock-in-profit-fail", function (event, arg) {
+      console.log("lock-in-profit-fail", arg);
+
+      addErrorLog(
+        `[${arg.broker}, ${arg.account_number}] lock in profit failed! ${arg.last_error}`
+      );
+
+      if (setAccount(arg)) {
+        refreshPairedTable();
+      }
+    });
+
+    ipc.on("maximize-lock-in-profit-success", function (event, arg) {
+      console.log("maximize-lock-in-profit-success", arg);
+
+      addSuccessLog(
+        `[${arg.account.broker}, ${arg.account.account_number}] Maximized Lock In Profit: Trailing stop moved to ${arg.trailing_stop}`
+      );
+
+      if (setAccount(arg.account)) {
+        refreshPairedTable();
+      }
+    });
+
+    ipc.on("maximize-lock-in-profit-fail", function (event, arg) {
+      console.log("maximize-lock-in-profit-fail", arg);
+
+      addErrorLog(
+        `[${arg.broker}, ${arg.account_number}] maximize lock in profit failed! ${arg.last_error}`
+      );
+
+      if (setAccount(arg)) {
+        refreshPairedTable();
+      }
+    });
+    
     ipc.on("sending-modify-target", function (event, arg) {
       console.log("sending-modify-target", arg);
 
@@ -1911,28 +1959,28 @@ function OnLotStoplossAndLossAtStopoutResult(obj){
   var spread_cost_a = (document.getElementById("compute_lot_size_dialog_label_spread_cost_for_account_a").innerHTML - 0) || 0;
   var spread_cost_b = (document.getElementById("compute_lot_size_dialog_label_spread_cost_for_account_b").innerHTML - 0) || 0;
 
-  var total_spread_cost = spread_cost_a + spread_cost_b;
+  //var total_spread_cost = spread_cost_a + spread_cost_b;
 
   var commission_a = document.getElementById("compute_lot_size_dialog_label_commission_for_account_a").innerHTML;
   commission_a = isNaN(commission_a) ? 0 : (commission_a - 0);
   var commission_b = document.getElementById("compute_lot_size_dialog_label_commission_for_account_b").innerHTML;
   commission_b = isNaN(commission_b) ? 0 : (commission_b - 0);
 
-  var total_commission = commission_a + commission_b;
+  //var total_commission = commission_a + commission_b;
 
   if(obj.account.broker === broker_a 
     && obj.account.account_number === account_number_a){
         document.getElementById("compute_lot_size_dialog_label_win_balance_for_account_a").innerHTML = parseFloat((obj.account.account_balance + target_profit_a).toFixed(2));
         document.getElementById("compute_lot_size_dialog_label_theoritical_net_balance_for_account_a").innerHTML = parseFloat((obj.account.account_balance + target_profit_a + crash_balance_b).toFixed(2));
-        document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_a").innerHTML = parseFloat((obj.account.account_balance + target_profit_a + crash_balance_b - Math.abs(total_spread_cost)).toFixed(2) - Math.abs(total_commission).toFixed(2));
+        document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_a").innerHTML = parseFloat((obj.account.account_balance + target_profit_a + crash_balance_b - Math.abs(spread_cost_a)).toFixed(2) - Math.abs(commission_a).toFixed(2));
         
     }
 
   if(obj.account.peer.broker === broker_a 
     && obj.account.peer.account_number === account_number_a){
-          document.getElementById("compute_lot_size_dialog_label_win_balance_for_account_a").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_a).toFixed(2));
-          document.getElementById("compute_lot_size_dialog_label_theoritical_net_balance_for_account_a").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_a + crash_balance_b).toFixed(2));
-          document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_a").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_a + crash_balance_b - Math.abs(total_spread_cost)).toFixed(2) - Math.abs(total_commission).toFixed(2));
+        document.getElementById("compute_lot_size_dialog_label_win_balance_for_account_a").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_a).toFixed(2));
+        document.getElementById("compute_lot_size_dialog_label_theoritical_net_balance_for_account_a").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_a + crash_balance_b).toFixed(2));
+        document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_a").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_a + crash_balance_b - Math.abs(spread_cost_a)).toFixed(2) - Math.abs(commission_a).toFixed(2));
     }
 
 
@@ -1940,14 +1988,14 @@ function OnLotStoplossAndLossAtStopoutResult(obj){
     && obj.account.account_number === account_number_b){
           document.getElementById("compute_lot_size_dialog_label_win_balance_for_account_b").innerHTML = parseFloat((obj.account.account_balance + target_profit_b).toFixed(2));
           document.getElementById("compute_lot_size_dialog_label_theoritical_net_balance_for_account_b").innerHTML = parseFloat((obj.account.account_balance + target_profit_b + crash_balance_a).toFixed(2));
-          document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_b").innerHTML = parseFloat((obj.account.account_balance + target_profit_b + crash_balance_a - Math.abs(total_spread_cost)).toFixed(2) - Math.abs(total_commission).toFixed(2));
+          document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_b").innerHTML = parseFloat((obj.account.account_balance + target_profit_b + crash_balance_a - Math.abs(spread_cost_b)).toFixed(2) - Math.abs(commission_b).toFixed(2));
     }
   
   if(obj.account.peer.broker === broker_b 
     && obj.account.peer.account_number === account_number_b){
           document.getElementById("compute_lot_size_dialog_label_win_balance_for_account_b").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_b).toFixed(2));
           document.getElementById("compute_lot_size_dialog_label_theoritical_net_balance_for_account_b").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_b + crash_balance_a).toFixed(2));
-          document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_b").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_b + crash_balance_a - Math.abs(total_spread_cost)).toFixed(2) - Math.abs(total_commission).toFixed(2));
+          document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_b").innerHTML = parseFloat((obj.account.peer.account_balance + target_profit_b + crash_balance_a - Math.abs(spread_cost_b)).toFixed(2) - Math.abs(commission_b).toFixed(2));
     }
   
     var actual_balance_a = (document.getElementById("compute_lot_size_dialog_label_actual_net_balance_for_account_a").innerHTML - 0) || 0 ;
@@ -3889,13 +3937,18 @@ function pairedAccountHTML(pair) {
                     </tr>  
 
                   <tr>
-                    <th colspan="2">HEDGE PROFIT</th>
-                    <th class="green">${accountA.hedge_profit.toFixed(2)} ${
-    accountA.account_currency
-  } </th>
-                    <th class="green">${accountB.hedge_profit.toFixed(2)} ${
-    accountA.account_currency
-  }</th>
+                    <th colspan="2">
+                    <div>HEDGE PROFIT</div>
+                    <div style="font-size: 12px;"><i>less commission & swap</i></div>
+                    </th>
+                    <th class="green">
+                      <div style="font-size: 12px;">${accountA.hedge_profit.toFixed(2)} ${accountA.account_currency} </div>
+                      <div style="color:teal;">${(accountA.hedge_profit + accountA.account_swap_cost + accountA.account_commission_cost).toFixed(2)} ${accountA.account_currency} </div>
+                    </th>
+                    <th class="green">
+                      <div style="font-size: 12px;">${accountB.hedge_profit.toFixed(2)} ${accountB.account_currency}</div>
+                      <div style="color:teal;">${(accountB.hedge_profit + accountB.account_swap_cost + accountB.account_commission_cost).toFixed(2)} ${accountA.account_currency}</div>
+                    </th>
                   </tr>
                   
                     </thead>

@@ -358,13 +358,16 @@ export class SyncUtil {
             `trade_copy_type=` + trade_copy_type + Constants.TAB + `action=sync_copy`;
     }
 
-    public static SyncClosePacket(ticket: number, origin_ticket: number): string {
+    public static SyncClosePacket(ticket: number, origin_ticket: number, spread_point: number): string {
         return `ticket=` + ticket + Constants.TAB // the ticket to be closed
-            + `origin_ticket=` + origin_ticket + Constants.TAB + `action=sync_close`;
+            + `origin_ticket=` + origin_ticket + Constants.TAB 
+            + `spread_point=` + spread_point + Constants.TAB
+            + `action=sync_close`;
     }
 
-    public static OwnClosePacket(ticket: number, force: boolean, reason: string = ''): string {
+    public static OwnClosePacket(ticket: number, spread_point: number, force: boolean, reason: string = ''): string {
         return `ticket=` + ticket + Constants.TAB // the ticket to be closed
+             + `spread_point=` + spread_point + Constants.TAB
              + `force=` + force + Constants.TAB
              + `reason=` + reason + Constants.TAB
              + `action=own_close`;

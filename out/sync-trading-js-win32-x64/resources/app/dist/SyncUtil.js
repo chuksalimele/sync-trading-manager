@@ -272,13 +272,16 @@ var SyncUtil = /** @class */ (function () {
             + "lot_size=" + order.lot_size + Constants_1.Constants.TAB +
             "trade_copy_type=" + trade_copy_type + Constants_1.Constants.TAB + "action=sync_copy";
     };
-    SyncUtil.SyncClosePacket = function (ticket, origin_ticket) {
+    SyncUtil.SyncClosePacket = function (ticket, origin_ticket, spread_point) {
         return "ticket=" + ticket + Constants_1.Constants.TAB // the ticket to be closed
-            + "origin_ticket=" + origin_ticket + Constants_1.Constants.TAB + "action=sync_close";
+            + "origin_ticket=" + origin_ticket + Constants_1.Constants.TAB
+            + "spread_point=" + spread_point + Constants_1.Constants.TAB
+            + "action=sync_close";
     };
-    SyncUtil.OwnClosePacket = function (ticket, force, reason) {
+    SyncUtil.OwnClosePacket = function (ticket, spread_point, force, reason) {
         if (reason === void 0) { reason = ''; }
         return "ticket=" + ticket + Constants_1.Constants.TAB // the ticket to be closed
+            + "spread_point=" + spread_point + Constants_1.Constants.TAB
             + "force=" + force + Constants_1.Constants.TAB
             + "reason=" + reason + Constants_1.Constants.TAB
             + "action=own_close";

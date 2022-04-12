@@ -28,6 +28,7 @@ var Order = /** @class */ (function () {
         this.modify_stoploss_execution_time = 0;
         this.force = false; //force close or a forced operation
         this.reason = ''; // reason for the last forced operation
+        this.is_lock_in_profit = false;
         this.is_sync_copying = false;
         this.is_closing = false;
         this.is_sync_modifying_target = false;
@@ -65,6 +66,8 @@ var Order = /** @class */ (function () {
     ;
     Order.prototype.SetCopyable = function (copyable) { this.is_copyable = copyable; };
     Order.prototype.IsCopyable = function () { return this.is_copyable; };
+    ;
+    Order.prototype.IsLockInProfit = function () { return this.is_lock_in_profit; };
     ;
     Order.prototype.SetDefaultSpread = function (default_spread) { this.default_spread = default_spread; };
     Order.prototype.Spread = function (broker, account_number) {

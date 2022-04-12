@@ -40,6 +40,8 @@ export class TraderAccount {
     private account_free_margin: number = 0;
     private account_swap_per_day: number = 0; 
     private account_trade_cost: number = 0;
+    private account_swap_cost: number = 0;
+    private account_commission_cost: number = 0;
     private chart_market_price: number = 0;//this is the current market price on the chart where the EA is loaded
     private hedge_profit: number = 0;
     private trade_copy_type: string;
@@ -98,6 +100,9 @@ export class TraderAccount {
             account_stopout_level: this.account_stopout_level,
             account_profit: this.account_profit,
             account_free_margin: this.account_free_margin,
+            account_trade_cost: this.account_trade_cost,
+            account_swap_cost: this.account_swap_cost,
+            account_commission_cost: this.account_commission_cost,
             hedge_profit: this.hedge_profit,
             terminal_connected : this.terminal_connected,
             only_trade_with_credit: this.only_trade_with_credit,
@@ -137,6 +142,9 @@ export class TraderAccount {
                 account_stopout_level: this.peer.account_stopout_level,
                 account_profit: this.peer.account_profit,
                 account_free_margin: this.peer.account_free_margin,
+                account_trade_cost: this.peer.account_trade_cost,
+                account_swap_cost: this.peer.account_swap_cost,
+                account_commission_cost: this.peer.account_commission_cost,
                 hedge_profit: this.peer.hedge_profit,
                 terminal_connected : this.peer.terminal_connected,
                 only_trade_with_credit: this.peer.only_trade_with_credit,
@@ -203,6 +211,10 @@ export class TraderAccount {
     public AccountSwapPerDay(): number { return this.account_swap_per_day };
 
     public AccountTradeCost(): number { return this.account_trade_cost };
+
+    public AccountSwapCost(): number { return this.account_swap_cost };
+    
+    public AccountCommissionCost(): number { return this.account_commission_cost };
 
     public HedgeProfit(): number { return this.hedge_profit };
 
@@ -432,6 +444,14 @@ export class TraderAccount {
 
     public SetAccountTradeCost(account_trade_cost: number): void {
         this.account_trade_cost = account_trade_cost
+    }
+
+    public SetAccountSwapCost(account_swap_cost: number): void {
+        this.account_swap_cost = account_swap_cost
+    }
+
+    public SetAccountCommissionCost(account_commission_cost: number): void {
+        this.account_commission_cost = account_commission_cost
     }
 
     public SetHedgeProfit(hedge_profit: number): void {
@@ -928,7 +948,8 @@ export class TraderAccount {
 
         //mark as sync closing to avoid duplicate operation
         own_order.Closing(true);
-        this.peer.SendData(SyncUtil.SyncClosePacket(peer_order.ticket, own_order.ticket));
+        var spread_point: number = peer_order.Spread(this.peer.Broker(), this.peer.AccountNumber());
+        this.peer.SendData(SyncUtil.SyncClosePacket(peer_order.ticket, own_order.ticket, spread_point));
 
         ipcSend('sending-sync-close', {
             account: this.Safecopy(),
@@ -941,7 +962,8 @@ export class TraderAccount {
 
         //mark as closing to avoid duplicate operation
         order.Closing(true);
-        this.SendData(SyncUtil.OwnClosePacket(order.ticket, force, reason));
+        var spread_point: number = order.Spread(this.Broker(), this.AccountNumber());
+        this.SendData(SyncUtil.OwnClosePacket(order.ticket, spread_point, force, reason));
 
         ipcSend('sending-own-close', {
             account: this.Safecopy(),
@@ -1075,7 +1097,7 @@ export class TraderAccount {
             var own_order = paired[own_column];
             var peer_order = paired[peer_column];
             //skip for those that are still open or sync closing is in progress
-            if (!own_order.IsClosed() || own_order.IsClosing())
+            if (!own_order.IsClosed() || own_order.IsClosing() || own_order.IsLockInProfit())
                 continue;
 
             this.DoSendClose(own_order, peer_order);
@@ -1086,10 +1108,11 @@ export class TraderAccount {
         let orderObj: Order = this.orders.get(ticket);
         var orders = this.Orders();
         for (var order of orders) {
-            if(orderObj.IsClosed() 
+            if(orderObj.IsClosed()
                  && orderObj.GropuId() === order.GropuId()
                  && !order.IsClosed() 
-                 && !order.IsClosing()){                
+                 && !order.IsClosing()
+                 && !order.IsLockInProfit()){                
                 this.DoSendOwnClose(order);        
             }
         }

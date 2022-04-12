@@ -1477,6 +1477,8 @@ export class SyncService {
     let close_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
     let modify_target_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
     let modify_stoploss_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
+    let lock_in_profit_success = null; // yes must be null since we care about three state: null, true or false
+    let maximize_lock_in_profit_success = null; // yes must be null since we care about three state: null, true or false
     let error: string = "";
     let uuid: string = "";
     let force: boolean = false;
@@ -1484,6 +1486,7 @@ export class SyncService {
     var token = data.split(Constants.TAB);
     let new_target: number = 0;
     let new_stoploss: number = 0;
+    let trailing_stop: number = 0;
     let fire_market_closed = false;
     let fire_market_opened = false;
     let spread_cost: number = 0;
@@ -1840,6 +1843,22 @@ export class SyncService {
       if (name == "new_stoploss") {
         new_stoploss = Number.parseFloat(value);
       }
+      
+      if (name == "lock_in_profit_success") {
+        lock_in_profit_success = value;
+        if(ticket > -1){
+          account.GetOrder(ticket).is_lock_in_profit = value == "true";
+          trailing_stop = account.GetOrder(ticket).stoploss
+        }        
+      }
+      
+      if (name == "maximize_lock_in_profit_success") {
+        maximize_lock_in_profit_success = value;
+        if(ticket > -1){
+          trailing_stop = account.GetOrder(ticket).stoploss
+        }
+      }
+      
 
       if (name == "stoploss_changed" && value == "true") {
         is_stoploss_changed = true;
@@ -1898,6 +1917,19 @@ export class SyncService {
         account.SetHedgeProfit(parseFloat(value));
       }
     
+      
+      if (name == "account_trade_cost") {
+        account.SetAccountTradeCost(parseFloat(value));
+      }    
+      
+      if (name == "account_swap_cost") {
+        account.SetAccountSwapCost(parseFloat(value));
+      }
+    
+      if (name == "account_commission_cost") {
+        account.SetAccountCommissionCost(parseFloat(value));
+      }
+    
       if (name == "error") {
         error = value;
         account.SetLastError(error);
@@ -1922,16 +1954,7 @@ export class SyncService {
     }
 
     var peer = this.getTraderAccount(peer_broker, peer_account_number);
-    this.PairTraderAccountWith(account, peer);
-
-    
-    if (ticket == -1) {
-      console.log("investigate why ticket is ", ticket);
-    }
-
-    if (origin_ticket == -1) {
-      console.log("investigate why origin_ticket is ", origin_ticket);
-    }
+    this.PairTraderAccountWith(account, peer);    
 
     if (fire_market_closed) {
       ipcSend("market-close", account.Safecopy());
@@ -2060,6 +2083,31 @@ export class SyncService {
       );
       ipcSend("modify-stoploss-fail", account.Safecopy());
     }
+
+    if(lock_in_profit_success == "true"){
+      ipcSend("lock-in-profit-success", {
+        account: account.Safecopy(),
+        trailing_stop : trailing_stop
+      }); 
+    }
+    
+    if(lock_in_profit_success == "false"){
+      ipcSend("lock-in-profit-fail", account.Safecopy()); 
+    }
+
+    if(maximize_lock_in_profit_success == "true"){
+      ipcSend("maximize-lock-in-profit-success", {
+        account: account.Safecopy(),
+        trailing_stop : trailing_stop
+      }); 
+    }
+    
+    if(maximize_lock_in_profit_success == "false"){
+      ipcSend("maximize-lock-in-profit-fail", account.Safecopy()); 
+    }
+
+    
+    
   }
 
   private CheckPossibleLossPrevention(account: TraderAccount) {

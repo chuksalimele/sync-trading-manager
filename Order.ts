@@ -33,11 +33,13 @@ export class Order {
     public modify_stoploss_execution_time: number = 0;
     public force: boolean = false;//force close or a forced operation
     public reason: string = '';// reason for the last forced operation
+    public is_lock_in_profit = false;
     private is_sync_copying: boolean = false;
     private is_closing: boolean = false;
     private is_sync_modifying_target: boolean = false;
     private is_sync_modifying_stoploss: boolean = false;
     private is_copyable: boolean = true;
+
 
     constructor(ticket: number) {
         this.ticket = ticket;
@@ -77,6 +79,8 @@ export class Order {
     public SetCopyable(copyable: boolean) { this.is_copyable = copyable; }
 
     public IsCopyable(): boolean { return this.is_copyable; };
+
+    public IsLockInProfit(): boolean { return this.is_lock_in_profit; };
 
     public SetDefaultSpread(default_spread: number) { this.default_spread = default_spread; }
 

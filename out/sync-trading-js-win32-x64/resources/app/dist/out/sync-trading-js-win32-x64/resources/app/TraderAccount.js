@@ -752,7 +752,8 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.DoSendClose = function (own_order, peer_order) {
         //mark as sync closing to avoid duplicate operation
         own_order.Closing(true);
-        this.peer.SendData(SyncUtil_1.SyncUtil.SyncClosePacket(peer_order.ticket, own_order.ticket));
+        var spread_point = peer_order.Spread(this.peer.Broker(), this.peer.AccountNumber());
+        this.peer.SendData(SyncUtil_1.SyncUtil.SyncClosePacket(peer_order.ticket, own_order.ticket, spread_point));
         main_1.ipcSend('sending-sync-close', {
             account: this.Safecopy(),
             order: own_order,
@@ -764,7 +765,8 @@ var TraderAccount = /** @class */ (function () {
         if (reason === void 0) { reason = ''; }
         //mark as closing to avoid duplicate operation
         order.Closing(true);
-        this.SendData(SyncUtil_1.SyncUtil.OwnClosePacket(order.ticket, force, reason));
+        var spread_point = order.Spread(this.Broker(), this.AccountNumber());
+        this.SendData(SyncUtil_1.SyncUtil.OwnClosePacket(order.ticket, spread_point, force, reason));
         main_1.ipcSend('sending-own-close', {
             account: this.Safecopy(),
             order: order,
@@ -869,7 +871,7 @@ var TraderAccount = /** @class */ (function () {
             var own_order = paired[own_column];
             var peer_order = paired[peer_column];
             //skip for those that are still open or sync closing is in progress
-            if (!own_order.IsClosed() || own_order.IsClosing())
+            if (!own_order.IsClosed() || own_order.IsClosing() || own_order.IsLockInProfit())
                 continue;
             this.DoSendClose(own_order, peer_order);
         }
@@ -882,7 +884,8 @@ var TraderAccount = /** @class */ (function () {
             if (orderObj.IsClosed()
                 && orderObj.GropuId() === order.GropuId()
                 && !order.IsClosed()
-                && !order.IsClosing()) {
+                && !order.IsClosing()
+                && !order.IsLockInProfit()) {
                 this.DoSendOwnClose(order);
             }
         }

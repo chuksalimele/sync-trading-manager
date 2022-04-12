@@ -4,7 +4,7 @@ var os = require('os');
 var path = require('path');
 
 export class Config {
-    public static readonly VERSION: string = '9.0.0';
+    public static readonly VERSION: string = '10.0.0';
     static readonly APP_HOME_DIRECTORY: string = `${os.homedir()}/.synctradingmanager`;
     public static readonly PIPE_PATH: string = "\\\\.\\pipe\\sync_trades_pipe";
     public static readonly SYNC_LOG_FILE: string = Config.APP_HOME_DIRECTORY + "/log/sync_log.sync";
