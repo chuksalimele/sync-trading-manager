@@ -1763,7 +1763,7 @@ function computeLotSizeHTML(obj){
                   <label><pre style="display: inline;">commssion               : </pre><strong id="compute_lot_size_dialog_label_commission_for_account_a"></strong></label>                      
                   <label><pre style="display: inline;">swap cost per day       : </pre><strong id="compute_lot_size_dialog_label_swap_cost_per_day_for_account_a"></strong></label>                                            
                   <label><pre style="display: inline;">profit                  : </pre><strong id="compute_lot_size_dialog_label_profit_for_account_a"></strong></label>
-                  <label><pre style="display: inline;">crash balance           : </pre><strong id="compute_lot_size_dialog_label_crash_balance_for_account_a"></strong> <i id="compute_lot_size_dialog_label_negative_balance_protection_for_account_a" style="font-size:10px; margin-left: 10px;">(-ve bal. protection)</i></label>
+                  <label><pre style="display: inline;">crash balance           : </pre><strong id="compute_lot_size_dialog_label_crash_balance_for_account_a"></strong> <i id="compute_lot_size_dialog_label_negative_balance_protection_for_account_a" style="font-size:10px; margin-left: 10px;"></i></label>
                   <label><pre style="display: inline;">win balance             : </pre><strong id="compute_lot_size_dialog_label_win_balance_for_account_a"></strong></label>
                   <label><pre style="display: inline;">Theoritical Net balance : </pre><strong id="compute_lot_size_dialog_label_theoritical_net_balance_for_account_a"></strong></label>
                   <label><pre style="display: inline;">Actual Net balance      : </pre><strong id="compute_lot_size_dialog_label_actual_net_balance_for_account_a"></strong></label>
@@ -1773,7 +1773,7 @@ function computeLotSizeHTML(obj){
                   <label><pre style="display: inline;">commssion               : </pre><strong id="compute_lot_size_dialog_label_commission_for_account_b"></strong></label>
                   <label><pre style="display: inline;">swap cost per day       : </pre><strong id="compute_lot_size_dialog_label_swap_cost_per_day_for_account_b"></strong></label>                      
                   <label><pre style="display: inline;">profit                  : </pre><strong id="compute_lot_size_dialog_label_profit_for_account_b"></strong></label>
-                  <label><pre style="display: inline;">crash balance           : </pre><strong id="compute_lot_size_dialog_label_crash_balance_for_account_b"></strong> <i id="compute_lot_size_dialog_label_negative_balance_protection_for_account_b" style="font-size:10px; margin-left: 10px;">(-ve bal. protection)</i></label>
+                  <label><pre style="display: inline;">crash balance           : </pre><strong id="compute_lot_size_dialog_label_crash_balance_for_account_b"></strong> <i id="compute_lot_size_dialog_label_negative_balance_protection_for_account_b" style="font-size:10px; margin-left: 10px;"></i></label>
                   <label><pre style="display: inline;">win balance             : </pre><strong id="compute_lot_size_dialog_label_win_balance_for_account_b"></strong></label>
                   <label><pre style="display: inline;">Theoritical net balance : </pre><strong id="compute_lot_size_dialog_label_theoritical_net_balance_for_account_b"></strong></label>
                   <label><pre style="display: inline;">Actual net balance      : </pre><strong id="compute_lot_size_dialog_label_actual_net_balance_for_account_b"></strong></label>
@@ -1905,7 +1905,7 @@ function OnLotStoplossAndLossAtStopoutResult(obj){
       document.getElementById("compute_lot_size_dialog_label_commission_for_account_a").innerHTML = obj.is_commission_known ? obj.commission : 'unknown';
       document.getElementById("compute_lot_size_dialog_label_commission_for_account_a").style.fontStyle = obj.is_commission_known ? 'normal' : 'italic';
       document.getElementById("compute_lot_size_dialog_label_crash_balance_for_account_a").innerHTML = obj.crash_balance < 0 ? 0 : obj.crash_balance;
-      document.getElementById("compute_lot_size_dialog_label_negative_balance_protection_for_account_a").style.visibility = obj.crash_balance < 0 ? 'visible' : 'hidden';
+      document.getElementById("compute_lot_size_dialog_label_negative_balance_protection_for_account_a").innerHTML = obj.crash_balance < 0 ? `(-ve bal. protection :  ${obj.crash_balance} )` : '';
       document.getElementById("compute_lot_size_dialog_label_swap_cost_per_day_for_account_a").innerHTML = obj.swap_cost_per_day;
             
   }
@@ -1933,7 +1933,7 @@ function OnLotStoplossAndLossAtStopoutResult(obj){
       document.getElementById("compute_lot_size_dialog_label_commission_for_account_b").innerHTML = obj.is_commission_known ? obj.commission : 'unknown';
       document.getElementById("compute_lot_size_dialog_label_commission_for_account_b").style.fontStyle = obj.is_commission_known ? 'normal' : 'italic';      
       document.getElementById("compute_lot_size_dialog_label_crash_balance_for_account_b").innerHTML = obj.crash_balance < 0 ? 0 : obj.crash_balance;
-      document.getElementById("compute_lot_size_dialog_label_negative_balance_protection_for_account_b").style.visibility = obj.crash_balance < 0 ? 'visible' : 'hidden';
+      document.getElementById("compute_lot_size_dialog_label_negative_balance_protection_for_account_b").innerHTML = obj.crash_balance < 0 ? `(-ve bal. protection :  ${obj.crash_balance} )` : '';
       document.getElementById("compute_lot_size_dialog_label_swap_cost_per_day_for_account_b").innerHTML = obj.swap_cost_per_day;
 
   }

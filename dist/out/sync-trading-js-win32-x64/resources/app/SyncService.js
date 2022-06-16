@@ -1413,6 +1413,15 @@ var SyncService = /** @class */ (function () {
             if (name == "account_expected_hedge_profit") {
                 account.SetHedgeProfit(parseFloat(value));
             }
+            if (name == "account_trade_cost") {
+                account.SetAccountTradeCost(parseFloat(value));
+            }
+            if (name == "account_swap_cost") {
+                account.SetAccountSwapCost(parseFloat(value));
+            }
+            if (name == "account_commission_cost") {
+                account.SetAccountCommissionCost(parseFloat(value));
+            }
             if (name == "error") {
                 error = value;
                 account.SetLastError(error);

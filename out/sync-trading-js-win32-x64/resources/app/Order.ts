@@ -2,8 +2,8 @@
 import { SyncUtil } from "./SyncUtil";
 
 
-export class Order {
-  
+export class Order{
+
     public ticket: number;
     public peer_ticket: number = -1;//greater than -1 if it is synced
     public group_id: string; // trade split group id
@@ -18,8 +18,6 @@ export class Order {
     public close_price: number = 0;
     public close_time: number = 0;
     public lot_size: number = 0;
-    private default_spread: number = 0;
-    private spread: number = 0;//do not call this directly
     public point: number = 0;
     public stoploss_change_time: number = 0;
     public target_change_time: number = 0;
@@ -34,15 +32,28 @@ export class Order {
     public force: boolean = false;//force close or a forced operation
     public reason: string = '';// reason for the last forced operation
     public is_lock_in_profit = false;
+
+    private default_spread: number = 0;
+    private spread: number = 0;//do not call this directly
     private is_sync_copying: boolean = false;
     private is_closing: boolean = false;
     private is_sync_modifying_target: boolean = false;
     private is_sync_modifying_stoploss: boolean = false;
     private is_copyable: boolean = true;
+    private
 
+    constructor(bit_order: BitOrder) {
+        this.ticket = bit_order.ticket;
+        this.group_id = bit_order.group_id;
+        this.group_order_count = bit_order.group_order_count        
+    }
 
-    constructor(ticket: number) {
-        this.ticket = ticket;
+    public snap(): BitOrder{
+        return {
+            ticket: this.ticket,
+            group_id: this.group_id,
+            group_order_count: this.group_order_count
+        };
     }
 
     public GropuId(): string { return this.group_id; }

@@ -22,7 +22,13 @@ export class Config {
 
     public static readonly MT4_EA_EXEC_FILE_SIMPLE_NAME: string = "SyncTradeClient.ex4";   
     public static readonly MT5_EA_EXEC_FILE_SIMPLE_NAME: string = "SyncTradeClient5.ex5";   
-    
+
+    //update this list for every update where the setting properties modification
+    //is too dangerous to use needs to be replacement completely
+    public static readonly LIST_OF_FILES_TO_CLEAR_IN_NEW_UPDATE = [
+        Config.APP_CONFIG_FILE,
+        Config.SYNC_LOG_FILE
+    ]
 
     /*public static readonly SYMBOLS_MAP_INITIAL_TXT = 
 `DJz; US30; WS30; DJ30; WALLSTREET; DOWJONES; DowJones; WallStreet; 

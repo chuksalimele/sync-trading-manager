@@ -491,25 +491,25 @@ var TraderAccount = /** @class */ (function () {
         }
         this.peer = peer;
     };
-    TraderAccount.prototype.EnsureTicketPeer = function (tickectPairs) {
+    TraderAccount.prototype.EnsureTicketPeer = function (bitOrderPairs) {
         if (!this.peer) {
             return;
         }
-        var paired_tickets = tickectPairs.get(this.PairID());
-        if (!paired_tickets) {
+        var paired_bit_orders = bitOrderPairs.get(this.PairID());
+        if (!paired_bit_orders) {
             return;
         }
-        for (var _i = 0, paired_tickets_1 = paired_tickets; _i < paired_tickets_1.length; _i++) {
-            var pair_ticket = paired_tickets_1[_i];
-            var own_ticket = pair_ticket[this.PairColumnIndex()];
-            var own_order = this.orders.get(own_ticket);
-            var peer_ticket = pair_ticket[this.peer.PairColumnIndex()];
-            var peer_order = this.peer.orders.get(peer_ticket);
+        for (var _i = 0, paired_bit_orders_1 = paired_bit_orders; _i < paired_bit_orders_1.length; _i++) {
+            var pair_ticket = paired_bit_orders_1[_i];
+            var own_bit_order = pair_ticket[this.PairColumnIndex()]; //modified111
+            var own_order = this.orders.get(own_bit_order.ticket); //modified111
+            var peer_bit_order = pair_ticket[this.peer.PairColumnIndex()]; //modified111
+            var peer_order = this.peer.orders.get(peer_bit_order.ticket); //modified111
             if (own_order) {
-                own_order.peer_ticket = peer_ticket;
+                own_order.peer_ticket = peer_bit_order.ticket; //modified111
             }
             if (peer_order) {
-                peer_order.peer_ticket = own_ticket;
+                peer_order.peer_ticket = own_bit_order.ticket; //modified111
             }
         }
     };
@@ -522,9 +522,9 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.IsKnown = function () {
         return this.broker !== null && this.broker.length > 0 && this.account_number !== null && this.account_number.length > 0;
     };
-    TraderAccount.prototype.SetOrder = function (ticket) {
-        if (!this.orders.get(ticket)) {
-            this.orders.set(ticket, new Order_1.Order(ticket));
+    TraderAccount.prototype.SetOrder = function (bit_order) {
+        if (bit_order && !this.orders.get(bit_order.ticket)) {
+            this.orders.set(bit_order.ticket, new Order_1.Order(bit_order));
         }
     };
     TraderAccount.prototype.GetOrder = function (ticket) {
@@ -710,12 +710,19 @@ var TraderAccount = /** @class */ (function () {
         }
         return valid;
     };
-    TraderAccount.prototype.IsAllGroupOrdersOpenAnNotClosing = function (own_order, peer_order) {
+    TraderAccount.prototype.IsModificationInProgress = function (own_order, peer_order) {
+        return own_order.IsSyncModifyingTarget()
+            || own_order.IsSyncModifyingStoploss()
+            || peer_order.IsSyncModifyingTarget()
+            || peer_order.IsSyncModifyingStoploss();
+    };
+    TraderAccount.prototype.IsAllGroupOrdersOpenAndNotClosing = function (own_order, peer_order) {
         var orders = this.Orders();
         var own_group_order_open_count = 0;
         for (var _i = 0, orders_3 = orders; _i < orders_3.length; _i++) {
             var order = orders_3[_i];
-            if (order.GropuId() === own_order.GropuId()
+            if (order.GropuId()
+                && order.GropuId() === own_order.GropuId()
                 && order.IsOpen() //order must be open
                 && !order.IsClosing() //order must not be in closing state
             ) {
@@ -728,7 +735,8 @@ var TraderAccount = /** @class */ (function () {
         var peer_group_order_open_count = 0;
         for (var _a = 0, peer_orders_2 = peer_orders; _a < peer_orders_2.length; _a++) {
             var order = peer_orders_2[_a];
-            if (order.GropuId() === peer_order.GropuId()
+            if (order.GropuId()
+                && order.GropuId() === peer_order.GropuId()
                 && order.IsOpen() //order must be open
                 && !order.IsClosing() //order must not be in closing state
             ) {
@@ -933,6 +941,28 @@ var TraderAccount = /** @class */ (function () {
         this.DoSendClose(order, peer_order);
         SyncUtil_1.SyncUtil.LogCloseRetry(this, origin_ticket, peer_ticket, attempts);
     };
+    TraderAccount.prototype.DeterminePeerTarget = function (own_order, peer_order, signed_srpread) {
+        //first get the absolute distance in points
+        //between the order stoploss and open price
+        var pip_piont = Math.abs(own_order.stoploss - own_order.open_price);
+        //negative the value since the target is below open in SELL position
+        if (peer_order.position == 'SELL') {
+            pip_piont = -pip_piont;
+        }
+        var peer_target_price = peer_order.open_price + pip_piont + signed_srpread;
+        return peer_target_price;
+    };
+    TraderAccount.prototype.DeterminePeerStoploss = function (own_order, peer_order, signed_srpread) {
+        //first get the absolute distance in points
+        //between the order target and open price
+        var pip_piont = Math.abs(own_order.target - own_order.open_price);
+        //negative the value since the stoploss is below open in BUY position
+        if (peer_order.position == 'BUY') {
+            pip_piont = -pip_piont;
+        }
+        var peer_stoploss_price = peer_order.open_price + pip_piont + signed_srpread;
+        return peer_stoploss_price;
+    };
     TraderAccount.prototype.SendModify = function (synced_orders) {
         var is_all_group_orders_open = false;
         for (var _i = 0, synced_orders_2 = synced_orders; _i < synced_orders_2.length; _i++) {
@@ -945,7 +975,7 @@ var TraderAccount = /** @class */ (function () {
             //are open and not in closing state. We don't what the stoploss and target
             //to be modified when orders are being closed, it is pointless
             if (!is_all_group_orders_open) {
-                is_all_group_orders_open = this.IsAllGroupOrdersOpenAnNotClosing(own_order, peer_order);
+                is_all_group_orders_open = this.IsAllGroupOrdersOpenAndNotClosing(own_order, peer_order);
                 if (!is_all_group_orders_open) {
                     return; //wait till all group orders are open
                 }
@@ -957,18 +987,24 @@ var TraderAccount = /** @class */ (function () {
             var signed_srpread = this.SignedOrderSpread(own_order);
             //according the strategy the stoploss of one is to be equal to the target of its peer
             //so if this is already done, no need to contine, just skip
-            var tg_diff = own_order.stoploss - peer_order.target + signed_srpread;
-            if (!own_order.IsSyncModifyingTarget()
+            var tg_diff = Math.abs(Math.abs(own_order.stoploss - own_order.open_price)
+                - Math.abs(peer_order.target - peer_order.open_price))
+                - Math.abs(signed_srpread);
+            if (!this.IsModificationInProgress(own_order, peer_order) //there must be no modification in progerss - whether targe to stoploss
                 && own_order.stoploss > 0
                 && !SyncUtil_1.SyncUtil.IsApproxZero(tg_diff)) {
-                var new_target = own_order.stoploss + signed_srpread;
+                //var new_target: number = own_order.stoploss + signed_srpread; // old @Deprecated
+                var new_target = this.DeterminePeerTarget(own_order, peer_order, signed_srpread);
                 this.DoSendModifyTarget(own_order, peer_order, new_target); //modify peer target be equal to own stoploss
             }
-            var st_diff = peer_order.stoploss - own_order.target - signed_srpread;
-            if (!own_order.IsSyncModifyingStoploss()
+            var st_diff = Math.abs(Math.abs(peer_order.stoploss - peer_order.open_price)
+                - Math.abs(own_order.target - own_order.open_price))
+                - Math.abs(signed_srpread);
+            if (!this.IsModificationInProgress(own_order, peer_order) //there must be no modification in progerss - whether targe to stoploss
                 && own_order.target > 0
                 && !SyncUtil_1.SyncUtil.IsApproxZero(st_diff)) {
-                var new_stoploss = own_order.target + signed_srpread;
+                //var new_stoploss: number = own_order.target + signed_srpread; //old @Deprecated
+                var new_stoploss = this.DeterminePeerStoploss(own_order, peer_order, signed_srpread); //new
                 this.DoSendModifyStoploss(own_order, peer_order, new_stoploss); //modify peer stoploss to be equal to own target
             }
         }

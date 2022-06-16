@@ -1,3 +1,4 @@
+
 import guiMsgBox from "./main";
 import { ipcSend, Shutdown }  from "./main";
 import { App, fs, path, mkdirp, readline } from "./app";
@@ -9,7 +10,7 @@ import {
   AccountOrderPlacement,
   PairAccount,
   PairOrder,
-  PairTicket,
+  PairBitOrder,
   StringBoolNull,
 } from "./Types";
 import { MessageBuffer } from "./MessageBuffer";
@@ -55,13 +56,13 @@ export class SyncService {
   //the Keys of the dictinary is the PairIDs while the Values are the paired order tickets
   //of the respective trades successfully synchronized (copied)
 
-  syncOpenTickectPairs: Map<string, PairTicket[]> = new Map<
+  syncOpenBitOrderPairs: Map<string, PairBitOrder[]> = new Map<
     string,
-    PairTicket[]
+    PairBitOrder[]
   >();
-  syncClosedTickectPairs: Map<string, PairTicket[]> = new Map<
+  syncClosedBitOrderPairs: Map<string, PairBitOrder[]> = new Map<
     string,
-    PairTicket[]
+    PairBitOrder[]
   >();
   pendingAccountPlacementOrderMap: Map<
     string,
@@ -70,55 +71,22 @@ export class SyncService {
 
   private emailer: Emailer = new Emailer();
 
-  private HandlertID: any;
+  private HandlerID: any;
 
   public Start() {
     try {
       SyncUtil.LoadAappConfig();
 
-      InstallController.Init();
+      //before we init app saved state and possibly clear files lets try
+      //to read old sync logs to prevent duplicate sync copy of trades still open
+      this.syncOpenBitOrderPairs = SyncUtil.LoadSavedSyncTrade();
 
-      //first load the sync state of the trades
-      var file = Config.SYNC_LOG_FILE;
-      var dirname = path.dirname(file);
-      if (!fs.existsSync(dirname)) {
-        mkdirp.sync(dirname);
-      }
+      //Now check the version to know if the app will require clearing
+      //saved properties the app uses
+      SyncUtil.initAppSavedState();
 
-      var fd = null;
-      if (fs.existsSync(file)) {
-        //file exists
+      InstallController.Init();      
 
-        //according to doc - Open file for reading and writing.
-        //An exception occurs if the file does not exist
-        //So since we know that at this point the file exists we are not bothered about exception
-        //since it will definitely not be thrown
-
-        fd = fs.openSync(file, "r+");
-      } else {
-        //file does not exist
-
-        //according to doc - Open file for reading and writing.
-        //The file is created(if it does not exist) or truncated(if it exists).
-        //So since we known that at this point it does not we are not bothered about the truncation
-
-        fd = fs.openSync(file, "w+");
-      }
-
-      var stats = fs.statSync(file);
-      var size = stats["size"];
-      var rq_size = size;
-      var readPos = size > rq_size ? size - rq_size : 0;
-      var length = size - readPos;
-      var buffer = Buffer.alloc(length);
-
-      if (length > 0) {
-        fs.readSync(fd, buffer, 0, length, readPos);
-
-        var data = buffer.toString(); //toString(0, length) did not work but toString() worked for me
-
-        this.syncOpenTickectPairs = new Map(JSON.parse(data));
-      }
     } catch (e) {
       console.log(e);
       throw e;
@@ -131,7 +99,7 @@ export class SyncService {
     this.CheckRoutineRefreshAccountInfoInterval();
 
     //run the service handler
-    this.HandlertID = setImmediate(this.Handler.bind(this));
+    this.HandlerID = setImmediate(this.Handler.bind(this));
   }
 
   private CheckPlaceOrderTriggerPermission(trigger: PlaceOrderTrigger) {
@@ -649,7 +617,7 @@ export class SyncService {
   }
 
   public Shutdown(){
-    clearImmediate(this.HandlertID);
+    clearImmediate(this.HandlerID);
     Shutdown(this.getAccounts());    
   }
 
@@ -671,7 +639,7 @@ export class SyncService {
 
     this.HandlePlaceOrderTriggers();
 
-    this.HandlertID = setImmediate(this.Handler.bind(this));
+    this.HandlerID = setImmediate(this.Handler.bind(this));
     
   }
 
@@ -835,7 +803,7 @@ export class SyncService {
       this.SendCopyToPeer(traderAccount);
       this.SendCopyToPeer(otherAccount);
 
-      traderAccount.EnsureTicketPeer(this.syncOpenTickectPairs);
+      traderAccount.EnsureTicketPeer(this.syncOpenBitOrderPairs);
 
       ipcSend("paired", traderAccount.Safecopy());
 
@@ -1010,24 +978,26 @@ export class SyncService {
     peer_ticket: number
   ) {
     let pairId = traderAccount.PairID();
-    let open_tickect_pairs: Array<PairTicket> = new Array<PairTicket>();
+    let open_bit_order_pairs: Array<PairBitOrder> = new Array<PairBitOrder>();//modified111
 
-    if (this.syncOpenTickectPairs.get(pairId)) {
-      open_tickect_pairs = this.syncOpenTickectPairs.get(pairId);
+    if (this.syncOpenBitOrderPairs.get(pairId)) {
+      open_bit_order_pairs = this.syncOpenBitOrderPairs.get(pairId);
     } else {
-      open_tickect_pairs = new Array<PairTicket>();
+      open_bit_order_pairs = new Array<PairBitOrder>();
     }
 
-    let paired_tickets: PairTicket = [null, null];
-
+    let paired_bit_orders: PairBitOrder = [null, null];
+    
     //assign to the appropriate column index
-    paired_tickets[traderAccount.PairColumnIndex()] = ticket;
-    paired_tickets[peerAccount.PairColumnIndex()] = peer_ticket;
 
-    open_tickect_pairs.push(paired_tickets);
-    this.syncOpenTickectPairs.set(pairId, open_tickect_pairs);
+    //come back abeg o!!! traderAccount and peerAccount may not have the orders    
+    paired_bit_orders[traderAccount.PairColumnIndex()] = traderAccount.GetOrder(ticket)?.snap(); //modified111
+    paired_bit_orders[peerAccount.PairColumnIndex()] = peerAccount.GetOrder(peer_ticket).snap();//modified111
 
-    traderAccount.EnsureTicketPeer(this.syncOpenTickectPairs);
+    open_bit_order_pairs.push(paired_bit_orders);
+    this.syncOpenBitOrderPairs.set(pairId, open_bit_order_pairs);
+
+    traderAccount.EnsureTicketPeer(this.syncOpenBitOrderPairs);
 
     this.SaveSyncState();
   }
@@ -1228,31 +1198,31 @@ export class SyncService {
   private FinalizeCloseSuccess(traderAccount: TraderAccount, ticket: number) {
     let pairId = traderAccount.PairID();
 
-    let open_tickect_pairs: Array<PairTicket> = new Array<PairTicket>();
+    let open_bit_order_pairs: Array<PairBitOrder> = new Array<PairBitOrder>();
 
-    if (this.syncOpenTickectPairs.get(pairId)) {
-      open_tickect_pairs = this.syncOpenTickectPairs.get(pairId);
+    if (this.syncOpenBitOrderPairs.get(pairId)) {
+      open_bit_order_pairs = this.syncOpenBitOrderPairs.get(pairId);
     } else {
-      open_tickect_pairs = new Array<PairTicket>();
+      open_bit_order_pairs = new Array<PairBitOrder>();
     }
 
-    //Remove the paired order ticket from the list
-    for (let ticket_pair of open_tickect_pairs) {
-      let own_ticket: number = ticket_pair[traderAccount.PairColumnIndex()];
-      if (own_ticket === ticket) {
-        SyncUtil.ArrayRemove(open_tickect_pairs, ticket_pair);
+    //Remove the paired bit order from the list
+    for (let bit_order_pair of open_bit_order_pairs) {
+      let own_bit_order: BitOrder = bit_order_pair[traderAccount.PairColumnIndex()]; //modified111
+      if (own_bit_order.ticket === ticket) {//modified111
+        SyncUtil.ArrayRemove(open_bit_order_pairs, bit_order_pair);
         //transfer to closed ticket pairs
-        var closed_ticket_pairs = this.syncClosedTickectPairs.get(pairId);
+        var closed_ticket_pairs = this.syncClosedBitOrderPairs.get(pairId);
         if (!closed_ticket_pairs) {
-          closed_ticket_pairs = new Array<PairTicket>();
+          closed_ticket_pairs = new Array<PairBitOrder>();
         }
-        closed_ticket_pairs.push(ticket_pair);
-        this.syncClosedTickectPairs.set(pairId, closed_ticket_pairs);
+        closed_ticket_pairs.push(bit_order_pair);
+        this.syncClosedBitOrderPairs.set(pairId, closed_ticket_pairs);
         break;
       }
     }
 
-    this.syncOpenTickectPairs.set(pairId, open_tickect_pairs);
+    this.syncOpenBitOrderPairs.set(pairId, open_bit_order_pairs);
 
     this.SaveSyncState();
   }
@@ -1271,17 +1241,17 @@ export class SyncService {
 
     var pairId = traderAccount.PairID();
 
-    var open_tickect_pairs: PairTicket[] = this.syncOpenTickectPairs.get(
+    var open_bit_order_pairs: PairBitOrder[] = this.syncOpenBitOrderPairs.get(
       pairId
     );
-    var closed_tickect_pairs: PairTicket[] = this.syncClosedTickectPairs.get(
+    var closed_bit_order_pairs: PairBitOrder[] = this.syncClosedBitOrderPairs.get(
       pairId
     );
 
-    if (!open_tickect_pairs) return orders; //meaning no order has been synced so return all
+    if (!open_bit_order_pairs) return orders; //meaning no order has been synced so return all
 
-    if (!closed_tickect_pairs) {
-      closed_tickect_pairs = new Array<PairTicket>();
+    if (!closed_bit_order_pairs) {
+      closed_bit_order_pairs = new Array<PairBitOrder>();
     }
 
     //at this point they are paired so get the actuall unsynced orders
@@ -1291,18 +1261,18 @@ export class SyncService {
       var found = false;
 
       //check in open paired tickets
-      for (let ticket_pair of open_tickect_pairs) {
-        let own_ticket: number = ticket_pair[traderAccount.PairColumnIndex()];
-        if (own_ticket === order_ticket) {
+      for (let ticket_pair of open_bit_order_pairs) {
+        let own_bit_order: BitOrder = ticket_pair[traderAccount.PairColumnIndex()];//modified111
+        if (own_bit_order.ticket === order_ticket) {//modified111
           found = true;
           break;
         }
       }
 
       //also check in closed paired tickets
-      for (let ticket_pair of closed_tickect_pairs) {
-        let own_ticket: number = ticket_pair[traderAccount.PairColumnIndex()];
-        if (own_ticket === order_ticket) {
+      for (let ticket_pair of closed_bit_order_pairs) {
+        let own_bit_order: BitOrder = ticket_pair[traderAccount.PairColumnIndex()];//modified111
+        if (own_bit_order.ticket === order_ticket) {//modified111
           found = true;
           console.log(`found int closed tickets ${order_ticket}`);
           break;
@@ -1328,22 +1298,22 @@ export class SyncService {
 
     var pairId = traderAccount.PairID();
 
-    if (!this.syncOpenTickectPairs.get(pairId)) return synced_orders;
+    if (!this.syncOpenBitOrderPairs.get(pairId)) return synced_orders;
 
-    var syncTickects: PairTicket[] = this.syncOpenTickectPairs.get(pairId);
+    var syncTickects: PairBitOrder[] = this.syncOpenBitOrderPairs.get(pairId);
 
-    var order_pairs_not_found: Array<PairTicket> = new Array<PairTicket>();
+    var order_pairs_not_found: Array<PairBitOrder> = new Array<PairBitOrder>();
 
     var row = -1;
     for (let ticket_pair of syncTickects) {
       row++;
       let own_column: number = traderAccount.PairColumnIndex();
       let peer_column: number = peerAccount.PairColumnIndex();
-      let own_ticket: number = ticket_pair[own_column];
-      let peer_ticket: number = ticket_pair[peer_column];
+      let own_bit_order: BitOrder = ticket_pair[own_column];//modified111
+      let peer_bit_order: BitOrder = ticket_pair[peer_column];//modified111
 
-      let own_order: Order = traderAccount.GetOrder(own_ticket);
-      let peer_order: Order = peerAccount.GetOrder(peer_ticket);
+      let own_order: Order = traderAccount.GetOrder(own_bit_order.ticket);//modified111
+      let peer_order: Order = peerAccount.GetOrder(peer_bit_order.ticket);//modified111
 
       if (!own_order || !peer_order) {
         //for case where the order does not exist
@@ -1360,7 +1330,7 @@ export class SyncService {
 
     //purge out orders not found
     for (let ticket_pair of order_pairs_not_found) {
-      SyncUtil.ArrayRemove(this.syncOpenTickectPairs.get(pairId), ticket_pair);
+      SyncUtil.ArrayRemove(this.syncOpenBitOrderPairs.get(pairId), ticket_pair);
     }
 
     return synced_orders;
@@ -1377,15 +1347,15 @@ export class SyncService {
 
     var pairId = traderAccount.PairID();
 
-    if (!this.syncOpenTickectPairs.get(pairId)) return null;
+    if (!this.syncOpenBitOrderPairs.get(pairId)) return null;
 
-    var syncTickects: PairTicket[] = this.syncOpenTickectPairs.get(pairId);
+    var syncBitOrders: PairBitOrder[] = this.syncOpenBitOrderPairs.get(pairId);
 
-    for (let pair_ticket of syncTickects) {
+    for (let pair_bit_order of syncBitOrders) {
       let own_column: number = traderAccount.PairColumnIndex();
       let peer_column: number = peerAccount.PairColumnIndex();
-      if (pair_ticket[peer_column] == peer_ticket) {
-        return pair_ticket[own_column];
+      if (pair_bit_order[peer_column].ticket == peer_ticket) {//modified111
+        return pair_bit_order[own_column].ticket;//modified111
       }
     }
 
@@ -1393,7 +1363,7 @@ export class SyncService {
   }
 
   private SaveSyncState() {
-    var data = JSON.stringify(Array.from(this.syncOpenTickectPairs.entries()));
+    var data = JSON.stringify(Array.from(this.syncOpenBitOrderPairs.entries()));
 
     //overwrite the file content
     fs.writeFile(
@@ -1696,9 +1666,14 @@ export class SyncService {
         var intValue = parseInt(value);
         if (intValue > -1) {
           ticket = intValue;
-          account.SetOrder(ticket);
-          account.EnsureTicketPeer(this.syncOpenTickectPairs);
-          account.EnsureTicketPeer(this.syncClosedTickectPairs);
+          var bitOrder: BitOrder ={ //modified111
+            ticket : ticket,
+            group_id : '',
+            group_order_count: 0
+          }
+          account.SetOrder(bitOrder);//modified111
+          account.EnsureTicketPeer(this.syncOpenBitOrderPairs);
+          account.EnsureTicketPeer(this.syncClosedBitOrderPairs);
         }
       }
 

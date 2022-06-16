@@ -28,6 +28,8 @@ var TraderAccount = /** @class */ (function () {
         this.account_free_margin = 0;
         this.account_swap_per_day = 0;
         this.account_trade_cost = 0;
+        this.account_swap_cost = 0;
+        this.account_commission_cost = 0;
         this.chart_market_price = 0; //this is the current market price on the chart where the EA is loaded
         this.hedge_profit = 0;
         this.ea_executable_file = '';
@@ -77,6 +79,9 @@ var TraderAccount = /** @class */ (function () {
             account_stopout_level: this.account_stopout_level,
             account_profit: this.account_profit,
             account_free_margin: this.account_free_margin,
+            account_trade_cost: this.account_trade_cost,
+            account_swap_cost: this.account_swap_cost,
+            account_commission_cost: this.account_commission_cost,
             hedge_profit: this.hedge_profit,
             terminal_connected: this.terminal_connected,
             only_trade_with_credit: this.only_trade_with_credit,
@@ -115,6 +120,9 @@ var TraderAccount = /** @class */ (function () {
                 account_stopout_level: this.peer.account_stopout_level,
                 account_profit: this.peer.account_profit,
                 account_free_margin: this.peer.account_free_margin,
+                account_trade_cost: this.peer.account_trade_cost,
+                account_swap_cost: this.peer.account_swap_cost,
+                account_commission_cost: this.peer.account_commission_cost,
                 hedge_profit: this.peer.hedge_profit,
                 terminal_connected: this.peer.terminal_connected,
                 only_trade_with_credit: this.peer.only_trade_with_credit,
@@ -180,6 +188,10 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.AccountSwapPerDay = function () { return this.account_swap_per_day; };
     ;
     TraderAccount.prototype.AccountTradeCost = function () { return this.account_trade_cost; };
+    ;
+    TraderAccount.prototype.AccountSwapCost = function () { return this.account_swap_cost; };
+    ;
+    TraderAccount.prototype.AccountCommissionCost = function () { return this.account_commission_cost; };
     ;
     TraderAccount.prototype.HedgeProfit = function () { return this.hedge_profit; };
     ;
@@ -366,6 +378,12 @@ var TraderAccount = /** @class */ (function () {
     };
     TraderAccount.prototype.SetAccountTradeCost = function (account_trade_cost) {
         this.account_trade_cost = account_trade_cost;
+    };
+    TraderAccount.prototype.SetAccountSwapCost = function (account_swap_cost) {
+        this.account_swap_cost = account_swap_cost;
+    };
+    TraderAccount.prototype.SetAccountCommissionCost = function (account_commission_cost) {
+        this.account_commission_cost = account_commission_cost;
     };
     TraderAccount.prototype.SetHedgeProfit = function (hedge_profit) {
         this.hedge_profit = hedge_profit;

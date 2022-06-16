@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Order = void 0;
 var SyncUtil_1 = require("./SyncUtil");
 var Order = /** @class */ (function () {
-    function Order(ticket) {
+    function Order(bit_order) {
         this.peer_ticket = -1; //greater than -1 if it is synced
         this.group_order_count = 0;
         this.open_price = 0;
@@ -13,8 +13,6 @@ var Order = /** @class */ (function () {
         this.close_price = 0;
         this.close_time = 0;
         this.lot_size = 0;
-        this.default_spread = 0;
-        this.spread = 0; //do not call this directly
         this.point = 0;
         this.stoploss_change_time = 0;
         this.target_change_time = 0;
@@ -29,13 +27,24 @@ var Order = /** @class */ (function () {
         this.force = false; //force close or a forced operation
         this.reason = ''; // reason for the last forced operation
         this.is_lock_in_profit = false;
+        this.default_spread = 0;
+        this.spread = 0; //do not call this directly
         this.is_sync_copying = false;
         this.is_closing = false;
         this.is_sync_modifying_target = false;
         this.is_sync_modifying_stoploss = false;
         this.is_copyable = true;
-        this.ticket = ticket;
+        this.ticket = bit_order.ticket;
+        this.group_id = bit_order.group_id;
+        this.group_order_count = bit_order.group_order_count;
     }
+    Order.prototype.snap = function () {
+        return {
+            ticket: this.ticket,
+            group_id: this.group_id,
+            group_order_count: this.group_order_count
+        };
+    };
     Order.prototype.GropuId = function () { return this.group_id; };
     Order.prototype.GroupOrderCount = function () { return this.group_order_count; };
     Order.prototype.IsOpen = function () { return this.open_time > 0 && this.close_time == 0; };

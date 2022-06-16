@@ -21,6 +21,12 @@ var Config = /** @class */ (function () {
     Config.MT_ALL_TERMINALS_DATA_ROOT = Config.USER_DATA_DIR + path.sep + 'MetaQuotes' + path.sep + 'Terminal';
     Config.MT4_EA_EXEC_FILE_SIMPLE_NAME = "SyncTradeClient.ex4";
     Config.MT5_EA_EXEC_FILE_SIMPLE_NAME = "SyncTradeClient5.ex5";
+    //update this list for every update where the setting properties modification
+    //is too dangerous to use needs to be replacement completely
+    Config.LIST_OF_FILES_TO_CLEAR_IN_NEW_UPDATE = [
+        Config.APP_CONFIG_FILE,
+        Config.SYNC_LOG_FILE
+    ];
     return Config;
 }());
 exports.Config = Config;
