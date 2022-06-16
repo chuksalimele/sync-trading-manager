@@ -208,6 +208,130 @@ var SyncUtil = /** @class */ (function () {
             }
         });
     };
+    SyncUtil.initAppSavedState = function () {
+        var configured_version = this.AppConfigMap.get('version');
+        if (configured_version && configured_version === Config_1.Config.VERSION) {
+            return;
+        }
+        //at this point there is a new version so reset relevant saved settings and configuration
+        for (var _i = 0, _a = Config_1.Config.LIST_OF_FILES_TO_CLEAR_IN_NEW_UPDATE; _i < _a.length; _i++) {
+            var file = _a[_i];
+            app_1.fs.truncateSync(file); // clear the content of the file
+            if (file == Config_1.Config.APP_CONFIG_FILE) {
+                var obj = { version: Config_1.Config.VERSION };
+                app_1.fs.writeFileSync(file, JSON.stringify(obj), { encoding: "utf8", flag: "w" });
+            }
+        }
+    };
+    SyncUtil.LoadSavedSyncTrade = function () {
+        //first load the sync state of the trades
+        var file = Config_1.Config.SYNC_LOG_FILE;
+        var dirname = app_1.path.dirname(file);
+        if (!app_1.fs.existsSync(dirname)) {
+            app_1.mkdirp.sync(dirname);
+        }
+        var fd = null;
+        if (app_1.fs.existsSync(file)) {
+            //file exists
+            //according to doc - Open file for reading and writing.
+            //An exception occurs if the file does not exist
+            //So since we know that at this point the file exists we are not bothered about exception
+            //since it will definitely not be thrown
+            fd = app_1.fs.openSync(file, "r+");
+        }
+        else {
+            //file does not exist
+            //according to doc - Open file for reading and writing.
+            //The file is created(if it does not exist) or truncated(if it exists).
+            //So since we known that at this point it does not we are not bothered about the truncation
+            fd = app_1.fs.openSync(file, "w+");
+        }
+        var stats = app_1.fs.statSync(file);
+        var size = stats["size"];
+        var rq_size = size;
+        var readPos = size > rq_size ? size - rq_size : 0;
+        var length = size - readPos;
+        var buffer = Buffer.alloc(length);
+        if (length > 0) {
+            app_1.fs.readSync(fd, buffer, 0, length, readPos);
+            var data = buffer.toString(); //toString(0, length) did not work but toString() worked for me
+            var json_arr = JSON.parse(data);
+            //validate structure
+            json_arr = this.ValidateSyncLogStructure(json_arr);
+            if (json_arr) {
+                return new Map(json_arr);
+            }
+        }
+        return new Map([]);
+    };
+    SyncUtil.ValidateSyncLogStructure = function (json_arr) {
+        if (json_arr.constructor !== Array) {
+            console.error('invalid sync log format detected - expected json array');
+            return;
+        }
+        for (var i = 0; i < json_arr.length; i++) {
+            if (json_arr[i].constructor !== Array) {
+                console.error('invalid sync log format detected - expected array of paired accounts');
+                return;
+            }
+            var json_arr_i = json_arr[i];
+            if (typeof json_arr_i[0] !== 'string') {
+                console.error('invalid sync log format detected - expected string type of paired accounts');
+                return;
+            }
+            if (json_arr_i[1].constructor !== Array) {
+                console.error('invalid sync log format detected - expected array of paired bit orders');
+                return;
+            }
+            var json_arr_i_1 = json_arr_i[1];
+            for (var j = 0; j < json_arr_i_1.length; j++) {
+                if (json_arr_i_1[j].constructor !== Array) {
+                    console.error('invalid sync log format detected - expected array of bit order');
+                    return;
+                }
+                var json_arr_i_1_j = json_arr_i_1[j];
+                if (json_arr_i_1_j.length !== 2) {
+                    console.error('invalid sync log format detected - expected array of 2 bit orders');
+                    return;
+                }
+                if ((typeof json_arr_i_1_j[0] === 'object' && typeof json_arr_i_1_j[1] !== 'object')
+                    || (typeof json_arr_i_1_j[1] === 'object' && typeof json_arr_i_1_j[0] !== 'object')) {
+                    console.error('invalid sync log format detected - expected same type for paired bit orders');
+                    return;
+                }
+                var old_structure_group_id = SyncUtil.Unique();
+                for (var k = 0; k < json_arr_i_1_j.length; k++) {
+                    var pair = json_arr_i_1_j[k];
+                    if (typeof pair === 'string' || typeof pair === 'number') {
+                        // this was the old structure which was string ticket.
+                        // we will replace with new structure - converting to object representation
+                        json_arr_i_1_j[k] = {
+                            ticket: pair,
+                            group_id: old_structure_group_id,
+                            group_order_count: 1 // 
+                        };
+                    }
+                    else if (typeof pair !== 'object') {
+                        console.error('invalid sync log format detected - invalid bit order type');
+                        return;
+                    }
+                    if (!('ticket' in json_arr_i_1_j[k])) {
+                        console.error('invalid sync log format detected - ticket property missing');
+                        return;
+                    }
+                    if (!('group_id' in json_arr_i_1_j[k])) {
+                        console.error('invalid sync log format detected - group_id property missing');
+                        return;
+                    }
+                    if (!('group_order_count' in json_arr_i_1_j[k])) {
+                        console.error('invalid sync log format detected - group_order_count property missing');
+                        return;
+                    }
+                }
+            }
+        }
+        return json_arr;
+    };
     SyncUtil.LoadAappConfig = function () {
         var file = Config_1.Config.APP_CONFIG_FILE;
         var dirname = app_1.path.dirname(file);
