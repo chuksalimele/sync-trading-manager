@@ -6,7 +6,7 @@ var path = require('path');
 var Config = /** @class */ (function () {
     function Config() {
     }
-    Config.VERSION = '10.0.0';
+    Config.VERSION = '12.0.0';
     Config.APP_HOME_DIRECTORY = os.homedir() + "/.synctradingmanager";
     Config.PIPE_PATH = "\\\\.\\pipe\\sync_trades_pipe";
     Config.SYNC_LOG_FILE = Config.APP_HOME_DIRECTORY + "/log/sync_log.sync";

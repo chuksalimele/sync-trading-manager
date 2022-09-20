@@ -945,7 +945,7 @@ var TraderAccount = /** @class */ (function () {
         //first get the absolute distance in points
         //between the order stoploss and open price
         var pip_piont = Math.abs(own_order.stoploss - own_order.open_price);
-        //negative the value since the target is below open in SELL position
+        //negate the value since the target is below open in SELL position
         if (peer_order.position == 'SELL') {
             pip_piont = -pip_piont;
         }
@@ -956,7 +956,7 @@ var TraderAccount = /** @class */ (function () {
         //first get the absolute distance in points
         //between the order target and open price
         var pip_piont = Math.abs(own_order.target - own_order.open_price);
-        //negative the value since the stoploss is below open in BUY position
+        //negate the value since the stoploss is below open in BUY position
         if (peer_order.position == 'BUY') {
             pip_piont = -pip_piont;
         }
@@ -990,7 +990,7 @@ var TraderAccount = /** @class */ (function () {
             var tg_diff = Math.abs(Math.abs(own_order.stoploss - own_order.open_price)
                 - Math.abs(peer_order.target - peer_order.open_price))
                 - Math.abs(signed_srpread);
-            if (!this.IsModificationInProgress(own_order, peer_order) //there must be no modification in progerss - whether targe to stoploss
+            if (!this.IsModificationInProgress(own_order, peer_order) //there must be no modification in progerss - whether targe or stoploss
                 && own_order.stoploss > 0
                 && !SyncUtil_1.SyncUtil.IsApproxZero(tg_diff)) {
                 //var new_target: number = own_order.stoploss + signed_srpread; // old @Deprecated
@@ -1000,7 +1000,7 @@ var TraderAccount = /** @class */ (function () {
             var st_diff = Math.abs(Math.abs(peer_order.stoploss - peer_order.open_price)
                 - Math.abs(own_order.target - own_order.open_price))
                 - Math.abs(signed_srpread);
-            if (!this.IsModificationInProgress(own_order, peer_order) //there must be no modification in progerss - whether targe to stoploss
+            if (!this.IsModificationInProgress(own_order, peer_order) //there must be no modification in progerss - whether targe or stoploss
                 && own_order.target > 0
                 && !SyncUtil_1.SyncUtil.IsApproxZero(st_diff)) {
                 //var new_stoploss: number = own_order.target + signed_srpread; //old @Deprecated

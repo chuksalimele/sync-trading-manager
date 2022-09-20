@@ -408,7 +408,7 @@ function Main() {
         });
 
     });
-
+    
     ipcMain.on("compute-lot-stoploss-loss-at-stopout", function(event, obj){
 
         var service = mainApp.GetSyncService();
@@ -425,21 +425,31 @@ function Main() {
         
         if(obj.stoploss_pips > 0){
             stoploss_pips = obj.stoploss_pips;
-             lot_size = account.DetermineLotSizefromPips(obj.stoploss_pips);
-             loss_at_stopout = account.DetermineLossAtStopout(obj.position, lot_size);
-             swap_cost_per_day = account.CalculateSwapPerDay(obj.position, lot_size);   
-             commission = account.CalculateCommision(lot_size);              
+             
+            lot_size = account.DetermineLotSizefromPips(obj.stoploss_pips);
+
+            loss_at_stopout = account.DetermineLossAtStopout(obj.position, lot_size);
+
+            swap_cost_per_day = account.CalculateSwapPerDay(obj.position, lot_size);                            
+            commission = account.CalculateCommision(lot_size);                           
         }else if(obj.lot_size > 0){
             lot_size = obj.lot_size;
+            
             stoploss_pips = account.DeterminePipsMoveAtStopout(obj.position, obj.lot_size);
+            
             loss_at_stopout = account.DetermineLossAtStopout(obj.position, obj.lot_size);
+            
             swap_cost_per_day = account.CalculateSwapPerDay(obj.position, obj.lot_size);   
             commission = account.CalculateCommision(obj.lot_size);
         }
 
         is_commission_known = account.IsCommisionKnown();
+        
         spread_cost = account.CalculateSpreadCost(lot_size);
+        
         crash_balance = parseFloat((account.AccountBalance() - loss_at_stopout).toFixed(2));
+
+
 
         var result ={
             account: account.Safecopy(),
@@ -467,6 +477,4 @@ function Main() {
         service.handlePendingAccountOrderPlacement(uuid, false);
     });
 
-
-    
 }

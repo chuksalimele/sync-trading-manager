@@ -17,10 +17,12 @@ export class TraderAccount {
     private account_number: string;
     private account_name: string;
     private chart_symbol: string;
+    private chart_symbol_digits: number;
     private only_trade_with_credit : boolean;
     private chart_symbol_trade_allowed : boolean;
     private terminal_connected : boolean;
     private platform_type: string;
+    private sync_copy_manual_entry: boolean = false;
     private icon_file: string;
     private chart_symbol_max_lot_size: number = 0;
     private chart_symbol_min_lot_size: number = 0;
@@ -107,6 +109,7 @@ export class TraderAccount {
             terminal_connected : this.terminal_connected,
             only_trade_with_credit: this.only_trade_with_credit,
             chart_symbol: this.chart_symbol,         
+            chart_symbol_digits: this.chart_symbol_digits,                     
             chart_symbol_trade_allowed: this.chart_symbol_trade_allowed,   
             chart_symbol_max_lot_size: this.chart_symbol_max_lot_size,
             chart_symbol_min_lot_size: this.chart_symbol_min_lot_size,
@@ -149,6 +152,7 @@ export class TraderAccount {
                 terminal_connected : this.peer.terminal_connected,
                 only_trade_with_credit: this.peer.only_trade_with_credit,
                 chart_symbol: this.peer.chart_symbol,
+                chart_symbol_digits: this.peer.chart_symbol_digits,
                 chart_symbol_trade_allowed: this.peer.chart_symbol_trade_allowed,
                 chart_symbol_max_lot_size: this.peer.chart_symbol_max_lot_size,
                 chart_symbol_min_lot_size: this.peer.chart_symbol_min_lot_size,
@@ -224,6 +228,8 @@ export class TraderAccount {
 
     public ChartSymbol(): string { return this.chart_symbol };
 
+    public ChartSymbolDigits(): number { return this.chart_symbol_digits };
+
     public ChartSymbolTradeAllowed(): boolean { return this.chart_symbol_trade_allowed };
 
     public ChartSymbolMaxLotSize(): number { return this.chart_symbol_max_lot_size; };
@@ -243,6 +249,8 @@ export class TraderAccount {
     public ChartMarketPrice(): number { return this.chart_market_price; };
 
     public PlatformType(): string { return this.platform_type };
+
+    public SyncCopyManualEntry() {return this.sync_copy_manual_entry};
 
     public IconFile(): string { return this.icon_file };
 
@@ -525,6 +533,10 @@ export class TraderAccount {
         this.chart_symbol = chart_symbol
     }
     
+    public SetChartSymbolDigits(chart_symbol_digits: number): void {
+        this.chart_symbol_digits = chart_symbol_digits
+    }
+    
     public SetChartSymbolTradeAllowed(chart_symbol_trade_allowed: boolean): void {
         this.chart_symbol_trade_allowed = chart_symbol_trade_allowed
     }
@@ -564,6 +576,10 @@ export class TraderAccount {
 
     public SetPlatformType(platform_type: string): void {
         this.platform_type = platform_type
+    }
+    
+    public SetSyncCopyManualEntry(sync_copy_manual_entry: boolean): void {
+        this.sync_copy_manual_entry = sync_copy_manual_entry
     }
     
     public SetEAExecutableFile(ea_executable_file: string): void {
@@ -687,7 +703,7 @@ export class TraderAccount {
 
     public CalculateSpreadCost(lot: number): number{
         var cost = -Math.abs(this.ChartSymbolSpread() * lot);//must alway return negative
-        return  parseFloat(cost.toFixed(2));
+        return  parseFloat(cost.toFixed(2))  * this.ChartSymbolTickValue() ;
     }
 
     public CalculateSwapPerDay(position:string, lot: number): number{
@@ -698,18 +714,23 @@ export class TraderAccount {
             swap = this.ChartSymbolSwapShort();
         }
         var cost = swap * lot;
-        return  parseFloat(cost.toFixed(2));
+        return  parseFloat(cost.toFixed(2))  * this.ChartSymbolTickValue();
     }
 
     public AmmountToPips(amount: number,  lots: number): number{
-        return amount /(lots * this.ChartSymbolTickValue());
+        return amount /(lots);
     }
-     
+        
     public DetermineLotSizefromPips(pips: number): number|string {
 
-       var lot: number  = 
+       /*var lot: number  = 
        (this.AccountBalance() + this.AccountCredit()) /
         (pips *  this.ChartSymbolTickValue() + this.ChartSymbolTradeUnits()*this.ChartMarketPrice()/this.AccountLeverage() * this.AccountStopoutLevel() / 100)
+        */
+
+        var lot: number  = 
+       (this.AccountBalance() + this.AccountCredit()) /
+        (pips * 1 + this.ChartSymbolTradeUnits()*this.ChartMarketPrice()/this.AccountLeverage() * this.AccountStopoutLevel() / 100)
 
         return parseFloat(lot.toFixed(2));
     }
@@ -1074,6 +1095,18 @@ export class TraderAccount {
             if (!order.IsCopyable() || order.IsClosed() || order.IsSyncCopying())
                 continue;
 
+            //at this point check manual entry order
+            //we know that orders without group id were enter manual
+            if(!order.GropuId()){
+                //in this block we will block orders whose sync copy for manual entry is disabled
+                if(!this.SyncCopyManualEntry() 
+                    || !this.Peer().SyncCopyManualEntry()){
+                        //skip since at least one of the pairing EAs disabled sync copy for manual entry
+                    continue;
+                }
+
+            }    
+
             this.DoSendCopy(order);
         }
     }
@@ -1225,9 +1258,16 @@ export class TraderAccount {
 
             var signed_srpread = this.SignedOrderSpread(own_order);
 
+
+            //normalize relevant price variables
+
+            SyncUtil.NormalizePrice(own_order);
+            SyncUtil.NormalizePrice(peer_order);
+
             //according the strategy the stoploss of one is to be equal to the target of its peer
             //so if this is already done, no need to contine, just skip
-
+            
+            var symbol_digits : number = Math.min(own_order.Digits(), peer_order.Digits());
             
             var tg_diff: number = Math.abs(
                                        Math.abs(own_order.stoploss - own_order.open_price)
@@ -1235,9 +1275,9 @@ export class TraderAccount {
                                   )
                                   - Math.abs(signed_srpread);
 
-            if (!this.IsModificationInProgress(own_order, peer_order)//there must be no modification in progerss - whether targe to stoploss
+            if (!this.IsModificationInProgress(own_order, peer_order)//there must be no modification in progerss - whether targe or stoploss
                 && own_order.stoploss > 0
-                && !SyncUtil.IsApproxZero(tg_diff)) {
+                && !SyncUtil.IsApproxZero(tg_diff, symbol_digits)) {
 
                 //var new_target: number = own_order.stoploss + signed_srpread; // old @Deprecated
 
@@ -1253,9 +1293,9 @@ export class TraderAccount {
                                   )
                                   - Math.abs(signed_srpread);
 
-            if (!this.IsModificationInProgress(own_order, peer_order)//there must be no modification in progerss - whether targe to stoploss
+            if (!this.IsModificationInProgress(own_order, peer_order)//there must be no modification in progerss - whether targe or stoploss
                 && own_order.target > 0
-                && !SyncUtil.IsApproxZero(st_diff)) {
+                && !SyncUtil.IsApproxZero(st_diff, symbol_digits)) {
 
                 //var new_stoploss: number = own_order.target + signed_srpread; //old @Deprecated
 

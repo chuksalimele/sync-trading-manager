@@ -19,6 +19,7 @@ export class Order{
     public close_time: number = 0;
     public lot_size: number = 0;
     public point: number = 0;
+    public digits: number = 0;
     public stoploss_change_time: number = 0;
     public target_change_time: number = 0;
     public copy_signal_time: number = 0;
@@ -108,5 +109,8 @@ export class Order{
         this.group_order_count = group_order_count;
     }   
 
+    public Digits(): number{
+        return this.digits;
+    }
 
 }

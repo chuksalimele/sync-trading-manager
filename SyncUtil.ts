@@ -185,8 +185,28 @@ export class SyncUtil {
         return "" + (++this.CountSeq) + this.InitUnique;
     }
 
-    static IsApproxZero(num: number): boolean {
-        return Math.abs(num) < Constants.APPROX_ZERO_TOLERANCE;
+    static IsApproxZero(num: number,  symbol_digits: number): boolean {
+
+        /*  @Deprecated
+            return Math.abs(num) < Constants.APPROX_ZERO_TOLERANCE; */
+
+            var tolerance: number =  1 / Math.pow(10, symbol_digits);
+
+           return  Math.abs(num) < tolerance   
+    }
+
+    static NormalizePrice(order: Order): Order{
+        
+            if(order.Digits() == 0){
+                return order;                       
+            }
+
+            order.open_price = Number(order.open_price.toFixed(order.Digits()))
+            order.close_price = Number(order.close_price.toFixed(order.Digits()))
+            order.target = Number(order.target.toFixed(order.Digits()))
+            order.stoploss = Number(order.stoploss.toFixed(order.Digits()))
+
+         return order
     }
 
     static ArrayRemove(arr: Array<unknown>, element: unknown) {
