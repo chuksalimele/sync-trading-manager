@@ -1449,6 +1449,7 @@ export class SyncService {
     let modify_stoploss_success: StringBoolNull = null; // yes must be null since we care about three state: null, true or false
     let lock_in_profit_success = null; // yes must be null since we care about three state: null, true or false
     let maximize_lock_in_profit_success = null; // yes must be null since we care about three state: null, true or false
+    let exit_on_tolerance_target_success = null; // yes must be null since we care about three state: null, true or false
     let error: string = "";
     let uuid: string = "";
     let force: boolean = false;
@@ -1457,6 +1458,8 @@ export class SyncService {
     let new_target: number = 0;
     let new_stoploss: number = 0;
     let trailing_stop: number = 0;
+    let account_balance: number = 0;
+    let floating_balance: number = 0;
     let fire_market_closed = false;
     let fire_market_opened = false;
     let spread_cost: number = 0;
@@ -1552,9 +1555,14 @@ export class SyncService {
       }
 
       if (name == "account_balance") {
-        account.SetAccountBalance(parseFloat(value));
+        account_balance = parseFloat(value);
+        account.SetAccountBalance(account_balance);
       }
 
+      if (name == "floating_balance") {
+        floating_balance = parseFloat(value);
+      }
+      
       if (name == "account_equity") {
         account.SetAccountEquity(parseFloat(value));
       }
@@ -1619,7 +1627,11 @@ export class SyncService {
       if (name == "chart_symbol_tick_value") {
         account.SetChartSymbolTickValue(parseFloat(value));
       }
-
+      
+      if (name == "chart_symbol_tick_size") {
+        account.SetChartSymbolTickSize(parseFloat(value));
+      }
+      
       if (name == "chart_symbol_swap_long") {
         account.SetChartSymbolSwapLong(parseFloat(value));
       }
@@ -2069,6 +2081,20 @@ export class SyncService {
         error
       );
       ipcSend("modify-stoploss-fail", account.Safecopy());
+    }
+
+    
+    
+    if(exit_on_tolerance_target_success == "true"){
+      ipcSend("exit-on-tolerance-target-success", {
+        account: account.Safecopy(),
+        account_balance : account_balance,
+        floating_balance: floating_balance
+      }); 
+    }
+    
+    if(exit_on_tolerance_target_success == "false"){
+      ipcSend("exit-on-tolerance-target-fail", account.Safecopy()); 
     }
 
     if(lock_in_profit_success == "true"){

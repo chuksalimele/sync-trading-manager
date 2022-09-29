@@ -185,16 +185,6 @@ export class SyncUtil {
         return "" + (++this.CountSeq) + this.InitUnique;
     }
 
-    static IsApproxZero(num: number,  symbol_digits: number): boolean {
-
-        /*  @Deprecated
-            return Math.abs(num) < Constants.APPROX_ZERO_TOLERANCE; */
-
-            var tolerance: number =  1 / Math.pow(10, symbol_digits);
-
-           return  Math.abs(num) < tolerance   
-    }
-
     static NormalizePrice(order: Order): Order{
         
             if(order.Digits() == 0){

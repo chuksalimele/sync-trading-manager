@@ -14,6 +14,7 @@ var Order = /** @class */ (function () {
         this.close_time = 0;
         this.lot_size = 0;
         this.point = 0;
+        this.digits = 0;
         this.stoploss_change_time = 0;
         this.target_change_time = 0;
         this.copy_signal_time = 0;
@@ -88,6 +89,9 @@ var Order = /** @class */ (function () {
     };
     Order.prototype.SetGroupOderCount = function (group_order_count) {
         this.group_order_count = group_order_count;
+    };
+    Order.prototype.Digits = function () {
+        return this.digits;
     };
     return Order;
 }());

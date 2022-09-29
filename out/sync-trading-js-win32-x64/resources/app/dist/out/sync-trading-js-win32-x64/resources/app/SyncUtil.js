@@ -140,8 +140,21 @@ var SyncUtil = /** @class */ (function () {
     SyncUtil.Unique = function () {
         return "" + (++this.CountSeq) + this.InitUnique;
     };
-    SyncUtil.IsApproxZero = function (num) {
-        return Math.abs(num) < Constants_1.Constants.APPROX_ZERO_TOLERANCE;
+    SyncUtil.IsApproxZero = function (num, symbol_digits) {
+        /*  @Deprecated
+            return Math.abs(num) < Constants.APPROX_ZERO_TOLERANCE; */
+        var tolerance = 1 / Math.pow(10, symbol_digits);
+        return Math.abs(num) < tolerance;
+    };
+    SyncUtil.NormalizePrice = function (order) {
+        if (order.Digits() == 0) {
+            return order;
+        }
+        order.open_price = Number(order.open_price.toFixed(order.Digits()));
+        order.close_price = Number(order.close_price.toFixed(order.Digits()));
+        order.target = Number(order.target.toFixed(order.Digits()));
+        order.stoploss = Number(order.stoploss.toFixed(order.Digits()));
+        return order;
     };
     SyncUtil.ArrayRemove = function (arr, element) {
         var objIndex = arr.findIndex(function (obj) { return obj === element; });

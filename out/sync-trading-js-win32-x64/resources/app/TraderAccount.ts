@@ -27,6 +27,7 @@ export class TraderAccount {
     private chart_symbol_max_lot_size: number = 0;
     private chart_symbol_min_lot_size: number = 0;
     private chart_symbol_tick_value: number = 0;
+    private chart_symbol_tick_size: number = 0;    
     private chart_symbol_swap_long: number = 0;
     private chart_symbol_swap_short: number = 0;
     private chart_symbol_trade_units: number = 0;    
@@ -238,6 +239,8 @@ export class TraderAccount {
 
     public ChartSymbolTickValue(): number { return this.chart_symbol_tick_value; };
 
+    public ChartSymbolTickSize(): number { return this.chart_symbol_tick_size; };
+    
     public ChartSymbolSwapLong(): number { return this.chart_symbol_swap_long; };
 
     public ChartSymbolSwapShort(): number { return this.chart_symbol_swap_short; };
@@ -553,6 +556,10 @@ export class TraderAccount {
         this.chart_symbol_tick_value = chart_symbol_tick_value
     }
 
+    public SetChartSymbolTickSize(chart_symbol_tick_size: number): void {
+        this.chart_symbol_tick_size = chart_symbol_tick_size
+    }
+
     public SetChartSymbolSwapLong(chart_symbol_swap_long: number): void {
         this.chart_symbol_swap_long = chart_symbol_swap_long
     }
@@ -816,7 +823,8 @@ export class TraderAccount {
         } else {
             sign = -1;
         }
-        return order.Spread(this.broker, this.account_number) * sign;
+        var true_point: number = this.ChartSymbolTickSize();
+        return order.Spread(this.broker, this.account_number, true_point) * sign;
     }
 
     public PlaceOrder(placement: OrderPlacement) {
@@ -980,7 +988,8 @@ export class TraderAccount {
 
         //mark as sync closing to avoid duplicate operation
         own_order.Closing(true);
-        var spread_point: number = peer_order.Spread(this.peer.Broker(), this.peer.AccountNumber());
+        var true_point: number = this.ChartSymbolTickSize();
+        var spread_point: number = peer_order.Spread(this.peer.Broker(), this.peer.AccountNumber(), true_point);
         this.peer.SendData(SyncUtil.SyncClosePacket(peer_order.ticket, own_order.ticket, spread_point));
 
         ipcSend('sending-sync-close', {
@@ -994,7 +1003,8 @@ export class TraderAccount {
 
         //mark as closing to avoid duplicate operation
         order.Closing(true);
-        var spread_point: number = order.Spread(this.Broker(), this.AccountNumber());
+        var true_point: number = this.ChartSymbolTickSize();
+        var spread_point: number = order.Spread(this.Broker(), this.AccountNumber(), true_point);
         this.SendData(SyncUtil.OwnClosePacket(order.ticket, spread_point, force, reason));
 
         ipcSend('sending-own-close', {
@@ -1231,6 +1241,7 @@ export class TraderAccount {
         return peer_stoploss_price
     }
 
+    
     public SendModify(synced_orders: Array<PairOrder>) {
 
         var is_all_group_orders_open: boolean = false;
@@ -1266,18 +1277,26 @@ export class TraderAccount {
 
             //according the strategy the stoploss of one is to be equal to the target of its peer
             //so if this is already done, no need to contine, just skip
+                        
+            var own_tick_size = this.ChartSymbolTickSize();
+            var peer_tick_size = this.Peer().ChartSymbolTickSize();
+
+            //we will used the bigger tick size if the tick sizes are different
+            var req_tick_size: number = own_tick_size > peer_tick_size? own_tick_size: peer_tick_size;
+
+            var precision_tolerance: number = Constants.APPROX_ZERO_TOLERANCE;
+
+            var diff_tg: number =  Math.abs(
+                    Math.abs(own_order.stoploss - own_order.open_price)
+                    -Math.abs(peer_order.target - peer_order.open_price)
+                ) 
+            var spreand_point_tg =  Math.abs(signed_srpread)   
             
-            var symbol_digits : number = Math.min(own_order.Digits(), peer_order.Digits());
-            
-            var tg_diff: number = Math.abs(
-                                       Math.abs(own_order.stoploss - own_order.open_price)
-                                       -Math.abs(peer_order.target - peer_order.open_price)
-                                  )
-                                  - Math.abs(signed_srpread);
+            var tg_diff_zero = Math.abs(diff_tg - spreand_point_tg) + precision_tolerance;
 
             if (!this.IsModificationInProgress(own_order, peer_order)//there must be no modification in progerss - whether targe or stoploss
                 && own_order.stoploss > 0
-                && !SyncUtil.IsApproxZero(tg_diff, symbol_digits)) {
+                && tg_diff_zero > req_tick_size) {
 
                 //var new_target: number = own_order.stoploss + signed_srpread; // old @Deprecated
 
@@ -1287,15 +1306,18 @@ export class TraderAccount {
             }
 
             
-            var st_diff: number = Math.abs(
-                                       Math.abs(peer_order.stoploss - peer_order.open_price)
-                                       -Math.abs(own_order.target - own_order.open_price)
-                                  )
-                                  - Math.abs(signed_srpread);
 
+            var diff_st: number =  Math.abs(
+                Math.abs(own_order.stoploss - own_order.open_price)
+                -Math.abs(peer_order.target - peer_order.open_price)
+            ) 
+            var spreand_point_st =  Math.abs(signed_srpread)   
+            
+            var st_diff_zero = Math.abs(diff_st - spreand_point_st) + precision_tolerance;
+            
             if (!this.IsModificationInProgress(own_order, peer_order)//there must be no modification in progerss - whether targe or stoploss
                 && own_order.target > 0
-                && !SyncUtil.IsApproxZero(st_diff, symbol_digits)) {
+                && st_diff_zero > req_tick_size) {
 
                 //var new_stoploss: number = own_order.target + signed_srpread; //old @Deprecated
 
@@ -1305,7 +1327,6 @@ export class TraderAccount {
             }
 
             
-
         }
     }
 

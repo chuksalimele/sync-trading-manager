@@ -10,6 +10,7 @@ var SyncTraderException_1 = require("./SyncTraderException");
 var MessageBuffer_1 = require("./MessageBuffer");
 var TraderAccount = /** @class */ (function () {
     function TraderAccount(socket) {
+        this.sync_copy_manual_entry = false;
         this.chart_symbol_max_lot_size = 0;
         this.chart_symbol_min_lot_size = 0;
         this.chart_symbol_tick_value = 0;
@@ -86,6 +87,7 @@ var TraderAccount = /** @class */ (function () {
             terminal_connected: this.terminal_connected,
             only_trade_with_credit: this.only_trade_with_credit,
             chart_symbol: this.chart_symbol,
+            chart_symbol_digits: this.chart_symbol_digits,
             chart_symbol_trade_allowed: this.chart_symbol_trade_allowed,
             chart_symbol_max_lot_size: this.chart_symbol_max_lot_size,
             chart_symbol_min_lot_size: this.chart_symbol_min_lot_size,
@@ -127,6 +129,7 @@ var TraderAccount = /** @class */ (function () {
                 terminal_connected: this.peer.terminal_connected,
                 only_trade_with_credit: this.peer.only_trade_with_credit,
                 chart_symbol: this.peer.chart_symbol,
+                chart_symbol_digits: this.peer.chart_symbol_digits,
                 chart_symbol_trade_allowed: this.peer.chart_symbol_trade_allowed,
                 chart_symbol_max_lot_size: this.peer.chart_symbol_max_lot_size,
                 chart_symbol_min_lot_size: this.peer.chart_symbol_min_lot_size,
@@ -201,6 +204,8 @@ var TraderAccount = /** @class */ (function () {
     ;
     TraderAccount.prototype.ChartSymbol = function () { return this.chart_symbol; };
     ;
+    TraderAccount.prototype.ChartSymbolDigits = function () { return this.chart_symbol_digits; };
+    ;
     TraderAccount.prototype.ChartSymbolTradeAllowed = function () { return this.chart_symbol_trade_allowed; };
     ;
     TraderAccount.prototype.ChartSymbolMaxLotSize = function () { return this.chart_symbol_max_lot_size; };
@@ -220,6 +225,8 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.ChartMarketPrice = function () { return this.chart_market_price; };
     ;
     TraderAccount.prototype.PlatformType = function () { return this.platform_type; };
+    ;
+    TraderAccount.prototype.SyncCopyManualEntry = function () { return this.sync_copy_manual_entry; };
     ;
     TraderAccount.prototype.IconFile = function () { return this.icon_file; };
     ;
@@ -434,6 +441,9 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.SetChartSymbol = function (chart_symbol) {
         this.chart_symbol = chart_symbol;
     };
+    TraderAccount.prototype.SetChartSymbolDigits = function (chart_symbol_digits) {
+        this.chart_symbol_digits = chart_symbol_digits;
+    };
     TraderAccount.prototype.SetChartSymbolTradeAllowed = function (chart_symbol_trade_allowed) {
         this.chart_symbol_trade_allowed = chart_symbol_trade_allowed;
     };
@@ -463,6 +473,9 @@ var TraderAccount = /** @class */ (function () {
     };
     TraderAccount.prototype.SetPlatformType = function (platform_type) {
         this.platform_type = platform_type;
+    };
+    TraderAccount.prototype.SetSyncCopyManualEntry = function (sync_copy_manual_entry) {
+        this.sync_copy_manual_entry = sync_copy_manual_entry;
     };
     TraderAccount.prototype.SetEAExecutableFile = function (ea_executable_file) {
         this.ea_executable_file = ea_executable_file || '';
@@ -560,7 +573,7 @@ var TraderAccount = /** @class */ (function () {
     };
     TraderAccount.prototype.CalculateSpreadCost = function (lot) {
         var cost = -Math.abs(this.ChartSymbolSpread() * lot); //must alway return negative
-        return parseFloat(cost.toFixed(2));
+        return parseFloat(cost.toFixed(2)) * this.ChartSymbolTickValue();
     };
     TraderAccount.prototype.CalculateSwapPerDay = function (position, lot) {
         var swap = 0;
@@ -571,14 +584,18 @@ var TraderAccount = /** @class */ (function () {
             swap = this.ChartSymbolSwapShort();
         }
         var cost = swap * lot;
-        return parseFloat(cost.toFixed(2));
+        return parseFloat(cost.toFixed(2)) * this.ChartSymbolTickValue();
     };
     TraderAccount.prototype.AmmountToPips = function (amount, lots) {
-        return amount / (lots * this.ChartSymbolTickValue());
+        return amount / (lots);
     };
     TraderAccount.prototype.DetermineLotSizefromPips = function (pips) {
+        /*var lot: number  =
+        (this.AccountBalance() + this.AccountCredit()) /
+         (pips *  this.ChartSymbolTickValue() + this.ChartSymbolTradeUnits()*this.ChartMarketPrice()/this.AccountLeverage() * this.AccountStopoutLevel() / 100)
+         */
         var lot = (this.AccountBalance() + this.AccountCredit()) /
-            (pips * this.ChartSymbolTickValue() + this.ChartSymbolTradeUnits() * this.ChartMarketPrice() / this.AccountLeverage() * this.AccountStopoutLevel() / 100);
+            (pips * 1 + this.ChartSymbolTradeUnits() * this.ChartMarketPrice() / this.AccountLeverage() * this.AccountStopoutLevel() / 100);
         return parseFloat(lot.toFixed(2));
     };
     TraderAccount.prototype.DetermineLossAtStopout = function (position, lot) {
@@ -870,6 +887,16 @@ var TraderAccount = /** @class */ (function () {
             //skip for those that are already closed or copying is in progress
             if (!order.IsCopyable() || order.IsClosed() || order.IsSyncCopying())
                 continue;
+            //at this point check manual entry order
+            //we know that orders without group id were enter manual
+            if (!order.GropuId()) {
+                //in this block we will block orders whose sync copy for manual entry is disabled
+                if (!this.SyncCopyManualEntry()
+                    || !this.Peer().SyncCopyManualEntry()) {
+                    //skip since at least one of the pairing EAs disabled sync copy for manual entry
+                    continue;
+                }
+            }
             this.DoSendCopy(order);
         }
     };
@@ -985,14 +1012,18 @@ var TraderAccount = /** @class */ (function () {
                 continue;
             }
             var signed_srpread = this.SignedOrderSpread(own_order);
+            //normalize relevant price variables
+            SyncUtil_1.SyncUtil.NormalizePrice(own_order);
+            SyncUtil_1.SyncUtil.NormalizePrice(peer_order);
             //according the strategy the stoploss of one is to be equal to the target of its peer
             //so if this is already done, no need to contine, just skip
+            var symbol_digits = Math.min(own_order.Digits(), peer_order.Digits());
             var tg_diff = Math.abs(Math.abs(own_order.stoploss - own_order.open_price)
                 - Math.abs(peer_order.target - peer_order.open_price))
                 - Math.abs(signed_srpread);
             if (!this.IsModificationInProgress(own_order, peer_order) //there must be no modification in progerss - whether targe or stoploss
                 && own_order.stoploss > 0
-                && !SyncUtil_1.SyncUtil.IsApproxZero(tg_diff)) {
+                && !SyncUtil_1.SyncUtil.IsApproxZero(tg_diff, symbol_digits)) {
                 //var new_target: number = own_order.stoploss + signed_srpread; // old @Deprecated
                 var new_target = this.DeterminePeerTarget(own_order, peer_order, signed_srpread);
                 this.DoSendModifyTarget(own_order, peer_order, new_target); //modify peer target be equal to own stoploss
@@ -1002,7 +1033,7 @@ var TraderAccount = /** @class */ (function () {
                 - Math.abs(signed_srpread);
             if (!this.IsModificationInProgress(own_order, peer_order) //there must be no modification in progerss - whether targe or stoploss
                 && own_order.target > 0
-                && !SyncUtil_1.SyncUtil.IsApproxZero(st_diff)) {
+                && !SyncUtil_1.SyncUtil.IsApproxZero(st_diff, symbol_digits)) {
                 //var new_stoploss: number = own_order.target + signed_srpread; //old @Deprecated
                 var new_stoploss = this.DeterminePeerStoploss(own_order, peer_order, signed_srpread); //new
                 this.DoSendModifyStoploss(own_order, peer_order, new_stoploss); //modify peer stoploss to be equal to own target

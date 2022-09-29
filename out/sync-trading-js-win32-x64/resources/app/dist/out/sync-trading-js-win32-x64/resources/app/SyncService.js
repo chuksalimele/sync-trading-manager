@@ -1205,6 +1205,9 @@ var SyncService = /** @class */ (function () {
             if (name == "platform_type") {
                 account.SetPlatformType(value);
             }
+            if (name == "sync_copy_manual_entry") {
+                account.SetSyncCopyManualEntry(value === 'true');
+            }
             if (name == "peer_broker") {
                 peer_broker = SyncUtil_1.SyncUtil.NormalizeName(value);
             }
@@ -1267,6 +1270,12 @@ var SyncService = /** @class */ (function () {
             }
             if (name == "point") {
                 account.GetOrder(ticket).point = Number.parseFloat(value);
+            }
+            if (name == "digits") {
+                account.GetOrder(ticket).digits = Number.parseFloat(value);
+            }
+            if (name == "chart_symbol_digits") {
+                account.SetChartSymbolDigits(Number.parseFloat(value));
             }
             if (name == "open_price") {
                 account.GetOrder(ticket).open_price = Number.parseFloat(value);

@@ -1053,6 +1053,7 @@ var SyncService = /** @class */ (function () {
         var modify_stoploss_success = null; // yes must be null since we care about three state: null, true or false
         var lock_in_profit_success = null; // yes must be null since we care about three state: null, true or false
         var maximize_lock_in_profit_success = null; // yes must be null since we care about three state: null, true or false
+        var exit_on_tolerance_target_success = null; // yes must be null since we care about three state: null, true or false
         var error = "";
         var uuid = "";
         var force = false;
@@ -1061,6 +1062,8 @@ var SyncService = /** @class */ (function () {
         var new_target = 0;
         var new_stoploss = 0;
         var trailing_stop = 0;
+        var account_balance = 0;
+        var floating_balance = 0;
         var fire_market_closed = false;
         var fire_market_opened = false;
         var spread_cost = 0;
@@ -1137,7 +1140,11 @@ var SyncService = /** @class */ (function () {
                 account.SetAccountName(value);
             }
             if (name == "account_balance") {
-                account.SetAccountBalance(parseFloat(value));
+                account_balance = parseFloat(value);
+                account.SetAccountBalance(account_balance);
+            }
+            if (name == "floating_balance") {
+                floating_balance = parseFloat(value);
             }
             if (name == "account_equity") {
                 account.SetAccountEquity(parseFloat(value));
@@ -1186,6 +1193,9 @@ var SyncService = /** @class */ (function () {
             }
             if (name == "chart_symbol_tick_value") {
                 account.SetChartSymbolTickValue(parseFloat(value));
+            }
+            if (name == "chart_symbol_tick_size") {
+                account.SetChartSymbolTickSize(parseFloat(value));
             }
             if (name == "chart_symbol_swap_long") {
                 account.SetChartSymbolSwapLong(parseFloat(value));
@@ -1515,6 +1525,16 @@ var SyncService = /** @class */ (function () {
         if (modify_stoploss_success == "false") {
             this.OnModifyStoplossResult(account, ticket, origin_ticket, new_stoploss, false, error);
             main_2.ipcSend("modify-stoploss-fail", account.Safecopy());
+        }
+        if (exit_on_tolerance_target_success == "true") {
+            main_2.ipcSend("exit-on-tolerance-target-success", {
+                account: account.Safecopy(),
+                account_balance: account_balance,
+                floating_balance: floating_balance
+            });
+        }
+        if (exit_on_tolerance_target_success == "false") {
+            main_2.ipcSend("exit-on-tolerance-target-fail", account.Safecopy());
         }
         if (lock_in_profit_success == "true") {
             main_2.ipcSend("lock-in-profit-success", {

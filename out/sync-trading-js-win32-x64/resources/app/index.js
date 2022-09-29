@@ -606,6 +606,30 @@ alertify.defaults.notifier.position = "bottom-right";
       }
     });
     
+    ipc.on("exit-on-tolerance-target-success", function (event, arg) {
+      console.log("exit-on-tolerance-target-success", arg);
+
+      addSuccessLog(
+        `[${arg.account.broker}, ${arg.account.account_number}] Exit on tolerance target: Floating bal. ${arg.floating_balance}; Account bal. ${arg.account_balance}`
+      );
+
+      if (setAccount(arg.account)) {
+        refreshPairedTable();
+      }
+    });
+
+    ipc.on("exit-on-tolerance-target-fail", function (event, arg) {
+      console.log("exit-on-tolerance-target-fail", arg);
+
+      addErrorLog(
+        `[${arg.broker}, ${arg.account_number}] Exit on tolerance target failed! ${arg.last_error}`
+      );
+
+      if (setAccount(arg)) {
+        refreshPairedTable();
+      }
+    });
+    
     ipc.on("lock-in-profit-success", function (event, arg) {
       console.log("lock-in-profit-success", arg);
 

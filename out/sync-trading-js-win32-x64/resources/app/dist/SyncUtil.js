@@ -140,12 +140,6 @@ var SyncUtil = /** @class */ (function () {
     SyncUtil.Unique = function () {
         return "" + (++this.CountSeq) + this.InitUnique;
     };
-    SyncUtil.IsApproxZero = function (num, symbol_digits) {
-        /*  @Deprecated
-            return Math.abs(num) < Constants.APPROX_ZERO_TOLERANCE; */
-        var tolerance = 1 / Math.pow(10, symbol_digits);
-        return Math.abs(num) < tolerance;
-    };
     SyncUtil.NormalizePrice = function (order) {
         if (order.Digits() == 0) {
             return order;
