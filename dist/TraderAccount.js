@@ -14,6 +14,7 @@ var TraderAccount = /** @class */ (function () {
         this.chart_symbol_max_lot_size = 0;
         this.chart_symbol_min_lot_size = 0;
         this.chart_symbol_tick_value = 0;
+        this.chart_symbol_tick_size = 0;
         this.chart_symbol_swap_long = 0;
         this.chart_symbol_swap_short = 0;
         this.chart_symbol_trade_units = 0;
@@ -213,6 +214,8 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.ChartSymbolMinLotSize = function () { return this.chart_symbol_min_lot_size; };
     ;
     TraderAccount.prototype.ChartSymbolTickValue = function () { return this.chart_symbol_tick_value; };
+    ;
+    TraderAccount.prototype.ChartSymbolTickSize = function () { return this.chart_symbol_tick_size; };
     ;
     TraderAccount.prototype.ChartSymbolSwapLong = function () { return this.chart_symbol_swap_long; };
     ;
@@ -456,6 +459,9 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.SetChartSymbolTickValue = function (chart_symbol_tick_value) {
         this.chart_symbol_tick_value = chart_symbol_tick_value;
     };
+    TraderAccount.prototype.SetChartSymbolTickSize = function (chart_symbol_tick_size) {
+        this.chart_symbol_tick_size = chart_symbol_tick_size;
+    };
     TraderAccount.prototype.SetChartSymbolSwapLong = function (chart_symbol_swap_long) {
         this.chart_symbol_swap_long = chart_symbol_swap_long;
     };
@@ -667,7 +673,8 @@ var TraderAccount = /** @class */ (function () {
         else {
             sign = -1;
         }
-        return order.Spread(this.broker, this.account_number) * sign;
+        var true_point = this.ChartSymbolTickSize();
+        return order.Spread(this.broker, this.account_number, true_point) * sign;
     };
     TraderAccount.prototype.PlaceOrder = function (placement) {
         this.SendData(SyncUtil_1.SyncUtil.SyncPlackeOrderPacket(placement, this.broker, this.account_number));
@@ -795,7 +802,8 @@ var TraderAccount = /** @class */ (function () {
     TraderAccount.prototype.DoSendClose = function (own_order, peer_order) {
         //mark as sync closing to avoid duplicate operation
         own_order.Closing(true);
-        var spread_point = peer_order.Spread(this.peer.Broker(), this.peer.AccountNumber());
+        var true_point = this.ChartSymbolTickSize();
+        var spread_point = peer_order.Spread(this.peer.Broker(), this.peer.AccountNumber(), true_point);
         this.peer.SendData(SyncUtil_1.SyncUtil.SyncClosePacket(peer_order.ticket, own_order.ticket, spread_point));
         main_1.ipcSend('sending-sync-close', {
             account: this.Safecopy(),
@@ -808,7 +816,8 @@ var TraderAccount = /** @class */ (function () {
         if (reason === void 0) { reason = ''; }
         //mark as closing to avoid duplicate operation
         order.Closing(true);
-        var spread_point = order.Spread(this.Broker(), this.AccountNumber());
+        var true_point = this.ChartSymbolTickSize();
+        var spread_point = order.Spread(this.Broker(), this.AccountNumber(), true_point);
         this.SendData(SyncUtil_1.SyncUtil.OwnClosePacket(order.ticket, spread_point, force, reason));
         main_1.ipcSend('sending-own-close', {
             account: this.Safecopy(),
@@ -1017,23 +1026,29 @@ var TraderAccount = /** @class */ (function () {
             SyncUtil_1.SyncUtil.NormalizePrice(peer_order);
             //according the strategy the stoploss of one is to be equal to the target of its peer
             //so if this is already done, no need to contine, just skip
-            var symbol_digits = Math.min(own_order.Digits(), peer_order.Digits());
-            var tg_diff = Math.abs(Math.abs(own_order.stoploss - own_order.open_price)
-                - Math.abs(peer_order.target - peer_order.open_price))
-                - Math.abs(signed_srpread);
+            var own_tick_size = this.ChartSymbolTickSize();
+            var peer_tick_size = this.Peer().ChartSymbolTickSize();
+            //we will used the bigger tick size if the tick sizes are different
+            var req_tick_size = own_tick_size > peer_tick_size ? own_tick_size : peer_tick_size;
+            var precision_tolerance = Constants_1.Constants.APPROX_ZERO_TOLERANCE;
+            var diff_tg = Math.abs(Math.abs(own_order.stoploss - own_order.open_price)
+                - Math.abs(peer_order.target - peer_order.open_price));
+            var spreand_point_tg = Math.abs(signed_srpread);
+            var tg_diff_zero = Math.abs(diff_tg - spreand_point_tg) + precision_tolerance;
             if (!this.IsModificationInProgress(own_order, peer_order) //there must be no modification in progerss - whether targe or stoploss
                 && own_order.stoploss > 0
-                && !SyncUtil_1.SyncUtil.IsApproxZero(tg_diff, symbol_digits)) {
+                && tg_diff_zero > req_tick_size) {
                 //var new_target: number = own_order.stoploss + signed_srpread; // old @Deprecated
                 var new_target = this.DeterminePeerTarget(own_order, peer_order, signed_srpread);
                 this.DoSendModifyTarget(own_order, peer_order, new_target); //modify peer target be equal to own stoploss
             }
-            var st_diff = Math.abs(Math.abs(peer_order.stoploss - peer_order.open_price)
-                - Math.abs(own_order.target - own_order.open_price))
-                - Math.abs(signed_srpread);
+            var diff_st = Math.abs(Math.abs(own_order.stoploss - own_order.open_price)
+                - Math.abs(peer_order.target - peer_order.open_price));
+            var spreand_point_st = Math.abs(signed_srpread);
+            var st_diff_zero = Math.abs(diff_st - spreand_point_st) + precision_tolerance;
             if (!this.IsModificationInProgress(own_order, peer_order) //there must be no modification in progerss - whether targe or stoploss
                 && own_order.target > 0
-                && !SyncUtil_1.SyncUtil.IsApproxZero(st_diff, symbol_digits)) {
+                && st_diff_zero > req_tick_size) {
                 //var new_stoploss: number = own_order.target + signed_srpread; //old @Deprecated
                 var new_stoploss = this.DeterminePeerStoploss(own_order, peer_order, signed_srpread); //new
                 this.DoSendModifyStoploss(own_order, peer_order, new_stoploss); //modify peer stoploss to be equal to own target
